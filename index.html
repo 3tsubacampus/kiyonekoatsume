@@ -1,0 +1,96 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#a00018">
+  <title>きよねこあつめ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <section id="title-screen" class="screen active">
+      <div class="title-crown">♛</div>
+      <h1>きよねこあつめ</h1>
+      <p class="title-sub">THE ABSOLUTE CHAMPION</p>
+
+      <div class="title-cat">
+        <div class="title-cat-face">
+          <img src="images/らっか.png" alt="キヨ猫">
+        </div>
+        <div class="title-cat-caption">絶対王者</div>
+      </div>
+
+      <button id="start-button" class="gold-button">あそぶ</button>
+      <p class="title-footer">K I Y O &nbsp; N E K O</p>
+    </section>
+
+    <section id="game-screen" class="screen">
+      <header id="game-header">
+        <h1>きよねこあつめ</h1>
+      </header>
+
+      <div class="status-area">
+        <div class="status-box goal-box">
+          <span class="status-label">くりあもくひょう</span>
+          <span id="goal-value">10,000</span>
+          <button id="reset-button" class="hidden">さいしょから</button>
+        </div>
+        <div class="status-box money-box">
+          <span class="status-label">しょじきん</span>
+          <span id="money-value">0</span>
+        </div>
+      </div>
+
+      <div id="board-wrapper">
+        <canvas id="game-canvas"></canvas>
+      </div>
+
+      <nav id="bottom-menu">
+        <button class="menu-button" data-menu="upgrade">
+          <span class="menu-icon">⬆</span>
+          <span>つうじょうきょうか</span>
+        </button>
+
+        <button class="menu-button" data-menu="collection">
+          <span class="menu-icon">🐈</span>
+          <span>これくしょん</span>
+          <span id="collection-notice" class="notice hidden">!</span>
+        </button>
+
+        <button class="menu-button" data-menu="settings">
+          <span class="menu-icon">⚙</span>
+          <span>せってい</span>
+        </button>
+      </nav>
+    </section>
+
+    <div id="popup-overlay" class="popup-overlay hidden">
+      <div id="popup-window" class="popup-window">
+        <button id="popup-close" class="popup-close">×</button>
+        <h2 id="popup-title"></h2>
+        <div id="popup-content"></div>
+      </div>
+    </div>
+
+    <!-- コレクション画像の拡大表示 -->
+    <div id="collection-image-overlay" class="collection-image-overlay hidden">
+      <button
+        id="collection-image-close"
+        class="collection-image-close"
+        aria-label="閉じる"
+      >×</button>
+
+      <img
+        id="collection-large-image"
+        class="collection-large-image"
+        src=""
+        alt="コレクション画像"
+      >
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
