@@ -1679,9 +1679,9 @@ function openPopup(title, html) {
   popupOverlay.classList.remove("hidden");
   document.body.classList.add("popup-open");
 }
-
 function closePopup() {
   popupOverlay.classList.add("hidden");
+  popupOverlay.classList.remove("rules-overlay");
   document.body.classList.remove("popup-open");
 }
 
@@ -1701,7 +1701,11 @@ popupClose.addEventListener("click", () => {
 });
 
 popupOverlay.addEventListener("click", e => {
-  if (e.target === popupOverlay) {
+  // ルール画面は、説明文や余白を含めてどこをタップしても閉じる。
+  if (
+    popupOverlay.classList.contains("rules-overlay") ||
+    e.target === popupOverlay
+  ) {
     closePopup();
   }
 });
@@ -2107,32 +2111,78 @@ function openCollectionMenu() {
 // 設定
 // ------------------------------------------------------------
 
+// ------------------------------------------------------------
+// ルール画面
+// ------------------------------------------------------------
+
+function openRulesScreen() {
+  openPopup(
+    "るーる",
+    `
+      <div class="rules-content">
+        <p>🐈 猫は自動で落ちてくるよ。</p>
+        <p>🔴 ピンや下の穴に当たるとポイントゲット！</p>
+        <p>✨ ピンや穴の数字が大きいほど、もらえるポイントも増えるよ。</p>
+        <p>⬆️ 「つうじょうきょうか」で落下スピードや倍率を強化しよう。</p>
+        <p>🎁 目標ポイントに届いたら「もくひょうたっせい！」を押して、くじに挑戦！</p>
+        <p>🏆 景品を集めて、絶対王者を目指そう！</p>
+      </div>
+
+      <p class="rules-close-hint">
+        画面のどこかをタップすると閉じるよ
+      </p>
+    `
+  );
+
+  popupOverlay.classList.add("rules-overlay");
+}
+
+// ------------------------------------------------------------
+// 設定
+// ------------------------------------------------------------
+
 function openSettingsMenu() {
   openPopup(
     "せってい",
     `
-      <div class="popup-item">
-        <strong>BGM</strong>
-        <label class="toggle-line">
-          <input type="checkbox" id="bgm-toggle"
-            ${bgmOn ? "checked" : ""}> ON
-        </label>
+      <!-- BGM -->
+      <div class="popup-item settings-audio-item">
+        <div class="settings-toggle-row">
+          <strong>BGM</strong>
+          <label class="settings-checkbox">
+            <input type="checkbox" id="bgm-toggle"
+              ${bgmOn ? "checked" : ""}>
+            ON
+          </label>
+        </div>
+
         <input id="bgm-slider" type="range"
           min="0" max="100" value="${bgmVolume * 100}">
       </div>
 
-      <div class="popup-item">
-        <strong>効果音</strong>
-        <label class="toggle-line">
-          <input type="checkbox" id="se-toggle"
-            ${seOn ? "checked" : ""}> ON
-        </label>
+      <!-- SE -->
+      <div class="popup-item settings-audio-item">
+        <div class="settings-toggle-row">
+          <strong>SE</strong>
+          <label class="settings-checkbox">
+            <input type="checkbox" id="se-toggle"
+              ${seOn ? "checked" : ""}>
+            ON
+          </label>
+        </div>
+
         <input id="se-slider" type="range"
           min="0" max="100" value="${seVolume * 100}">
       </div>
 
-      <div class="popup-item">
-        <strong>絶対王者モード</strong>
+      <!-- ルール -->
+      <div class="popup-item settings-action-item settings-rules-item">
+        <button id="open-rules">るーる</button>
+      </div>
+
+      <!-- 絶対王者モード -->
+      <div class="popup-item settings-action-item">
+        <strong>絶対王者もーど</strong>
         <label class="toggle-line">
           <input type="checkbox" id="champ-toggle"
             ${championMode ? "checked" : ""}>
@@ -2140,18 +2190,25 @@ function openSettingsMenu() {
         </label>
       </div>
 
-      <div class="popup-item">
+      <!-- ゲーム復旧 -->
+      <div class="popup-item settings-action-item">
         <strong>ゲーム復旧</strong>
-        <p>ゲームがフリーズしたときに動作を再開するよ。</p>
         <button id="freeze-recovery">フリーズ解除</button>
       </div>
     `
   );
 
+  // ルール画面
+  document.getElementById("open-rules").onclick = () => {
+    openRulesScreen();
+  };
+
+  // ゲーム復旧
   document.getElementById("freeze-recovery").onclick = () => {
     recoverGame();
   };
 
+  // BGM ON / OFF
   document.getElementById("bgm-toggle").onchange = e => {
     bgmOn = e.target.checked;
 
@@ -2162,19 +2219,23 @@ function openSettingsMenu() {
     }
   };
 
+  // BGM音量
   document.getElementById("bgm-slider").oninput = e => {
     bgmVolume = Number(e.target.value) / 100;
     updateBGMVolume();
   };
 
+  // SE ON / OFF
   document.getElementById("se-toggle").onchange = e => {
     seOn = e.target.checked;
   };
 
+  // SE音量
   document.getElementById("se-slider").oninput = e => {
     seVolume = Number(e.target.value) / 100;
   };
 
+  // 絶対王者モード
   document.getElementById("champ-toggle").onchange = e => {
     championMode = e.target.checked;
 
@@ -2207,7 +2268,6 @@ function openSettingsMenu() {
     drawBoard();
   };
 }
-
 // ------------------------------------------------------------
 // さいしょから
 // ------------------------------------------------------------
