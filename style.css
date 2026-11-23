@@ -42,6 +42,40 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* 強化ボタン長押し中の文字選択を防ぐ */
+.upgrade-hold-active {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* 強化によって数値が変わったときの演出 */
+.upgrade-value-changed {
+  display: inline-block;
+  animation: upgrade-value-flash 0.35s ease-out;
+}
+
+@keyframes upgrade-value-flash {
+  0% {
+    color: #fff;
+    transform: scale(1);
+    text-shadow: 0 0 0 transparent;
+  }
+
+  35% {
+    color: #ffe36b;
+    transform: scale(1.18);
+    text-shadow:
+      0 0 5px #ffd84d,
+      0 0 12px #ffb700;
+  }
+
+  100% {
+    color: inherit;
+    transform: scale(1);
+    text-shadow: 0 0 0 transparent;
+  }
+}
+
 .screen {
   display: none;
   min-height: 100vh;
@@ -547,7 +581,7 @@ button:disabled {
 
 .stage-clear {
   position: absolute;
-  z-index: 9999;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;

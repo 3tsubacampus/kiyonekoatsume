@@ -1,4 +1,3 @@
-
 "use strict";
 
 // ============================================================
@@ -21,6 +20,7 @@ const popupClose = document.getElementById("popup-close");
 
 const collectionNotice = document.getElementById("collection-notice");
 const resetButton = document.getElementById("reset-button");
+
 const collectionImageOverlay =
   document.getElementById("collection-image-overlay");
 
@@ -28,7 +28,9 @@ const collectionLargeImage =
   document.getElementById("collection-large-image");
 
 const collectionImageClose =
+  document.getElementElementById?.("collection-image-close") ||
   document.getElementById("collection-image-close");
+
 // ------------------------------------------------------------
 // ゲーム状態
 // ------------------------------------------------------------
@@ -50,6 +52,8 @@ let holes = [];
 
 let lastDropTime = 0;
 let lastHoleChange = 0;
+let lastPinChange = 0;
+
 let animationId = null;
 let previousPattern = -1;
 
@@ -76,7 +80,7 @@ let seOn = true;
 const MAX_SPEED_LEVEL = 12;
 const MIN_DROP_INTERVAL = 1.5;
 
-const PIN_RADIUS = 29;
+const PIN_RADIUS = 15;
 const HOLE_HEIGHT = 42;
 const CAT_RADIUS = 30;
 const CAT_COLLISION_RADIUS = CAT_RADIUS * 0.8;
@@ -84,6 +88,9 @@ const CAT_LOWER_COLLISION_SCALE = 0.7;
 
 const PIN_WALL_MARGIN =
   CAT_RADIUS + PIN_RADIUS + CAT_RADIUS + 8;
+
+const PIN_CHANGE_INTERVAL = 30000;
+const HOLE_CHANGE_INTERVAL = 60000;
 
 // ------------------------------------------------------------
 // ピン効果音
@@ -150,7 +157,6 @@ function updateBGM() {
     bgmAudio.volume = bgmVolume;
     currentBgmMode = targetMode;
 
-    // 絶対王者モードは1分24.7秒から再生
     if (targetMode === "champion") {
       const targetAudio = bgmAudio;
 
@@ -214,6 +220,8 @@ function createSparkles() {
 function drawChampionSparkles(now) {
   if (!championMode) return;
 
+  ctx.save();
+
   sparkleParticles.forEach(p => {
     const hole = holes[p.holeIndex];
     if (!hole) return;
@@ -224,11 +232,12 @@ function drawChampionSparkles(now) {
     const x = hole.x + hole.width * p.x;
     const y = hole.y + hole.height * p.y;
 
-    ctx.save();
     ctx.globalAlpha = alpha;
     ctx.fillStyle = "#fff5bd";
+
+    // shadowBlurは負荷が大きいため控えめにする
     ctx.shadowColor = "#fff1a0";
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 5;
 
     ctx.beginPath();
     ctx.arc(
@@ -239,9 +248,9 @@ function drawChampionSparkles(now) {
       Math.PI * 2
     );
     ctx.fill();
-
-    ctx.restore();
   });
+
+  ctx.restore();
 }
 
 // ------------------------------------------------------------
@@ -256,7 +265,7 @@ function createBoardSparkles() {
   const w = boardW();
   const h = boardH();
 
-  for (let i = 0; i < 65; i++) {
+  for (let i = 0; i < 45; i++) {
     boardSparkles.push({
       x: Math.random() * w,
       y: Math.random() * h,
@@ -270,7 +279,7 @@ function createBoardSparkles() {
 
 function updateBoardSparkles(dt) {
   if (!championMode) {
-    boardSparkles = [];
+    if (boardSparkles.length) boardSparkles = [];
     return;
   }
 
@@ -278,7 +287,11 @@ function updateBoardSparkles(dt) {
   const h = boardH();
   const scale = Math.min(dt / 16.67, 2);
 
-  if (Math.random() < 0.08 * scale) {
+  // パーティクル数の上限を設けて負荷を抑える
+  if (
+    boardSparkles.length < 60 &&
+    Math.random() < 0.06 * scale
+  ) {
     boardSparkles.push({
       x: Math.random() * w,
       y: -5,
@@ -289,43 +302,52 @@ function updateBoardSparkles(dt) {
     });
   }
 
-  boardSparkles.forEach(p => {
+  for (let i = boardSparkles.length - 1; i >= 0; i--) {
+    const p = boardSparkles[i];
+
     p.y += p.speed * scale;
     p.x += p.drift * scale;
-  });
 
-  boardSparkles = boardSparkles.filter(p => p.y < h + 10);
+    if (p.y >= h + 10) {
+      boardSparkles.splice(i, 1);
+    }
+  }
 }
 
 function drawBoardSparkles(now) {
-  if (!championMode) return;
+  if (!championMode || !boardSparkles.length) return;
+
+  ctx.save();
 
   boardSparkles.forEach(p => {
     const wave = Math.sin(now / 250 + p.phase);
     const alpha = 0.35 + (wave + 1) * 0.3;
     const size = p.size * (0.7 + (wave + 1) * 0.3);
 
-    ctx.save();
     ctx.globalAlpha = alpha;
     ctx.fillStyle = "#fff5bd";
+
+    // ぼかしを減らして描画負荷軽減
     ctx.shadowColor = "#ffd84a";
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 4;
 
     ctx.beginPath();
     ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
     ctx.fill();
 
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = "#ffffff";
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1;
+
     ctx.beginPath();
     ctx.moveTo(p.x - size * 1.8, p.y);
     ctx.lineTo(p.x + size * 1.8, p.y);
     ctx.moveTo(p.x, p.y - size * 1.8);
     ctx.lineTo(p.x, p.y + size * 1.8);
     ctx.stroke();
-
-    ctx.restore();
   });
+
+  ctx.restore();
 }
 
 // ------------------------------------------------------------
@@ -465,7 +487,7 @@ function safePinX(rx, w) {
 }
 
 // ------------------------------------------------------------
-// 通常モードのピン倍率を設定
+// 通常モードのピン倍率設定
 // 同じ倍率は最大2個まで
 // ------------------------------------------------------------
 
@@ -496,9 +518,6 @@ function updateGoal() {
   goalValue.textContent = stage <= 5 ? fmt(goal) : "∞";
   resetButton.classList.toggle("hidden", stage < 6);
 }
-
-
-
 function updateMoney() {
   moneyValue.textContent = `${fmt(money)} えん`;
 
@@ -514,6 +533,9 @@ function updateMoney() {
       "cannot-afford",
       maxed || !canAfford
     );
+    speedButton.textContent = maxed
+      ? "レベルマックス"
+      : "強化する";
   }
 
   if (multButton) {
@@ -526,13 +548,75 @@ function updateMoney() {
     );
   }
 
-  // 目標金額に到達したら達成ボタンを表示
+  // 強化メニューを開いている場合、表示中の数値を即時更新する。
+  refreshUpgradeMenuDisplay();
+
   if (stage <= 5 && money >= goal) {
     showClearButton();
   } else {
     removeClearButton();
   }
 }
+
+// ------------------------------------------------------------
+// 強化メニューの数値表示更新
+// ------------------------------------------------------------
+
+function animateUpgradeValue(id, value) {
+  const element = document.getElementById(id);
+  if (!element) return;
+
+  const newValue = String(value);
+
+  // 数値が変わったときだけ演出する。
+  if (element.textContent === newValue) return;
+
+  element.textContent = newValue;
+
+  element.classList.remove("upgrade-value-changed");
+
+  // アニメーションを確実に再スタートさせる。
+  void element.offsetWidth;
+
+  element.classList.add("upgrade-value-changed");
+}
+
+function refreshUpgradeMenuDisplay() {
+  const speedMaxed = speedLevel >= MAX_SPEED_LEVEL;
+
+  animateUpgradeValue(
+    "speed-current-value",
+    `${speed.toFixed(1)}秒`
+  );
+
+  animateUpgradeValue(
+    "speed-level-value",
+    `Lv.${speedLevel}/${MAX_SPEED_LEVEL}`
+  );
+
+  animateUpgradeValue(
+    "speed-cost-value",
+    speedMaxed
+      ? "---"
+      : `${speedCost().toLocaleString()}円`
+  );
+
+  animateUpgradeValue(
+    "mult-current-value",
+    `${multiplier}円`
+  );
+
+  animateUpgradeValue(
+    "mult-level-value",
+    `Lv.${multiplierLevel + 1}`
+  );
+
+  animateUpgradeValue(
+    "mult-cost-value",
+    `${multiplierCost().toLocaleString()}円`
+  );
+}
+
 
 // ------------------------------------------------------------
 // キャンバス調整
@@ -608,9 +692,11 @@ startButton.addEventListener("click", () => {
   const beginGame = () => {
     if (started) return;
     started = true;
+
     titleCatFace?.classList.remove("spinning");
     titleScreen.classList.remove("active");
     gameScreen.classList.add("active");
+
     gameStarted = true;
     paused = false;
 
@@ -619,6 +705,7 @@ startButton.addEventListener("click", () => {
 
     lastDropTime = performance.now();
     lastHoleChange = Date.now();
+    lastPinChange = Date.now();
 
     startGameTicker();
     updateBGM();
@@ -629,6 +716,74 @@ startButton.addEventListener("click", () => {
   playSound.addEventListener("ended", beginGame, { once: true });
   playSound.play().catch(() => beginGame());
 });
+
+// ------------------------------------------------------------
+// ピン位置の生成
+// ------------------------------------------------------------
+
+function generatePinPositions(count) {
+  const w = boardW();
+  const h = boardH();
+
+  let p;
+
+  do {
+    p = randInt(0, pinPatterns.length - 1);
+  } while (p === previousPattern && pinPatterns.length > 1);
+
+  previousPattern = p;
+
+  const layout = pinPatterns[p];
+
+  const candidates = layout.map(pos => {
+    const rx = pos[0];
+
+    return {
+      x: safePinX(rx, w),
+      y: h * (1 / 3 + pos[1] * (2 / 3)),
+      rx,
+      ry: (1 / 3 + pos[1] * (2 / 3))
+    };
+  });
+
+  // 候補をシャッフル
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = randInt(0, i);
+    [candidates[i], candidates[j]] =
+      [candidates[j], candidates[i]];
+  }
+
+  const selected = [];
+  const minPinCenterDistance =
+    PIN_RADIUS * 2 + CAT_RADIUS * 2 + 8;
+
+  for (const candidate of candidates) {
+    if (
+      selected.every(pin =>
+        Math.hypot(
+          candidate.x - pin.x,
+          candidate.y - pin.y
+        ) >= minPinCenterDistance
+      )
+    ) {
+      selected.push(candidate);
+
+      if (selected.length >= count) break;
+    }
+  }
+
+  // 間隔条件を満たせない場合も、既存ピンが古い位置に残らないよう
+  // 未選択候補を追加して要求数を必ず確保する。
+  if (selected.length < count) {
+    for (const candidate of candidates) {
+      if (selected.includes(candidate)) continue;
+      selected.push(candidate);
+      if (selected.length >= count) break;
+    }
+  }
+
+  return selected;
+}
 
 // ------------------------------------------------------------
 // 盤面作成
@@ -653,75 +808,17 @@ function createBoard() {
     });
   }
 
-  let p;
-
-  do {
-    p = randInt(0, pinPatterns.length - 1);
-  } while (p === previousPattern);
-
-  previousPattern = p;
-
-  const layout = pinPatterns[p];
   const requestedCount = randInt(3, 5);
-  pins = [];
-  const multCounts = {};
+  const selected = generatePinPositions(requestedCount);
 
-  const candidates = layout.map(pos => {
-    const rx = pos[0];
-
-    return {
-      x: safePinX(rx, w),
-      y: h * (1 / 3 + pos[1] * (2 / 3)),
-      rx,
-      ry: (1 / 3 + pos[1] * (2 / 3))
-    };
-  });
-
-  for (let i = candidates.length - 1; i > 0; i--) {
-    const j = randInt(0, i);
-    [candidates[i], candidates[j]] =
-      [candidates[j], candidates[i]];
-  }
-
-  const selected = [];
-  const minPinCenterDistance =
-    PIN_RADIUS * 2 + CAT_RADIUS * 2 + 8;
-
-  for (const candidate of candidates) {
-    if (
-      selected.every(pin =>
-        Math.hypot(
-          candidate.x - pin.x,
-          candidate.y - pin.y
-        ) >= minPinCenterDistance
-      )
-    ) {
-      selected.push(candidate);
-
-      if (selected.length >= requestedCount) break;
-    }
-  }
-
-  if (selected.length < 3) {
-    for (const candidate of candidates) {
-      if (selected.includes(candidate)) continue;
-
-      selected.push(candidate);
-
-      if (selected.length >= 3) break;
-    }
-  }
-
-  selected.forEach(pos => {
-    pins.push({
-      x: pos.x,
-      y: pos.y,
-      rx: pos.rx,
-      ry: pos.ry,
-      radius: PIN_RADIUS,
-      multiplier: championMode ? 100 : 1
-    });
-  });
+  pins = selected.map(pos => ({
+    x: pos.x,
+    y: pos.y,
+    rx: pos.rx,
+    ry: pos.ry,
+    radius: PIN_RADIUS,
+    multiplier: championMode ? 100 : 1
+  }));
 
   if (!championMode) {
     assignNormalPinMultipliers();
@@ -735,6 +832,55 @@ function createBoard() {
     boardSparkles = [];
   }
 
+  lastPinChange = Date.now();
+  lastHoleChange = Date.now();
+
+  drawBoard();
+}
+
+// ------------------------------------------------------------
+// 30秒ごとにピン位置を変更
+// 倍率は維持する
+// ------------------------------------------------------------
+
+function changePinPositions() {
+  if (!pins.length) return;
+
+  const count = pins.length;
+  const newPositions = generatePinPositions(count);
+
+  // 既存の倍率を保持して位置だけ変更
+  newPositions.forEach((pos, i) => {
+    if (!pins[i]) return;
+
+    pins[i].x = pos.x;
+    pins[i].y = pos.y;
+    pins[i].rx = pos.rx;
+    pins[i].ry = pos.ry;
+
+    // ピン接触状態をリセットし、移動直後の衝突を正常化
+  });
+
+  cats.forEach(cat => {
+    const touching = new Set();
+
+    pins.forEach((pin, index) => {
+      const dx = cat.x - pin.x;
+      const dy = cat.y - pin.y;
+      const lowerRatio = Math.max(0, Math.min(1, dy / cat.radius));
+      const collisionRadius =
+        cat.radius *
+        (1 - (1 - CAT_LOWER_COLLISION_SCALE) * lowerRatio);
+
+      if (Math.hypot(dx, dy) < collisionRadius + pin.radius) {
+        touching.add(index);
+      }
+    });
+
+    cat.pinTouching = touching;
+  });
+
+  lastPinChange = Date.now();
   drawBoard();
 }
 
@@ -772,11 +918,10 @@ function dropCat() {
 // ------------------------------------------------------------
 // ピン衝突
 // ------------------------------------------------------------
-
 function checkPinCollision(cat, pin, index, frameContacts) {
   const dx = cat.x - pin.x;
   const dy = cat.y - pin.y;
-  const dist = Math.hypot(dx, dy);
+  const distanceSquared = dx * dx + dy * dy;
 
   const lowerRatio = Math.max(
     0,
@@ -789,7 +934,10 @@ function checkPinCollision(cat, pin, index, frameContacts) {
 
   const minDist = collisionRadius + pin.radius;
 
-  if (dist >= minDist) return;
+  // 衝突していない大半の判定では平方根を計算しない。
+  if (distanceSquared >= minDist * minDist) return;
+
+  const dist = Math.sqrt(distanceSquared);
 
   if (
     !cat.pinTouching?.has(index) &&
@@ -800,7 +948,6 @@ function checkPinCollision(cat, pin, index, frameContacts) {
     const gained = multiplier * pin.multiplier;
     money += gained;
 
-    updateMoney();
     recordPointGain("倍率ピン", pin.multiplier, gained, cat);
 
     if (stage <= 5 && money >= goal && !stageCleared) {
@@ -831,7 +978,6 @@ function checkPinCollision(cat, pin, index, frameContacts) {
 
   cat.spin += (Math.random() - 0.5) * 0.1;
 }
-
 // ------------------------------------------------------------
 // ポイント加算：倍率穴
 // ------------------------------------------------------------
@@ -842,7 +988,6 @@ function awardHole(cat, hole) {
   const gained = multiplier * hole.multiplier;
   money += gained;
 
-  updateMoney();
   recordPointGain("倍率穴", hole.multiplier, gained, cat);
 
   if (stage <= 5 && money >= goal && !stageCleared) {
@@ -854,16 +999,21 @@ function awardHole(cat, hole) {
 // ------------------------------------------------------------
 // 猫の物理演算
 // ------------------------------------------------------------
+// 衝突判定の細かすぎる分割を抑え、負荷を軽減
+// ------------------------------------------------------------
 
 function updateCats(dt) {
   const w = boardW();
   const h = boardH();
+  const moneyBeforeUpdate = money;
 
   const scale = Math.min(dt / 16.67, 2);
   const gravity = 0.075;
   const terminal = 2.25;
 
-  cats.forEach(cat => {
+  for (let c = cats.length - 1; c >= 0; c--) {
+    const cat = cats[c];
+
     cat.vy = Math.min(terminal, cat.vy + gravity * scale);
 
     cat.vx +=
@@ -880,9 +1030,14 @@ function updateCats(dt) {
       Math.abs(cat.vy * scale)
     );
 
-    const steps = Math.max(
-      1,
-      Math.ceil(travel / Math.max(4, cat.radius * 0.22))
+    // 旧式の細かい分割を軽減
+    // 最大3分割までに制限
+    const steps = Math.min(
+      3,
+      Math.max(
+        1,
+        Math.ceil(travel / Math.max(8, cat.radius * 0.5))
+      )
     );
 
     const stepScale = scale / steps;
@@ -891,6 +1046,7 @@ function updateCats(dt) {
       cat.x += cat.vx * stepScale;
       cat.y += cat.vy * stepScale;
 
+      // 左右の壁
       if (cat.x - cat.radius < 0) {
         cat.x = cat.radius;
         cat.vx = Math.abs(cat.vx) * 0.75;
@@ -901,20 +1057,37 @@ function updateCats(dt) {
         cat.vx = -Math.abs(cat.vx) * 0.75;
       }
 
+      // 上壁
       if (cat.y - cat.radius < 0) {
         cat.y = cat.radius;
         cat.vy = Math.abs(cat.vy) * 0.75;
       }
 
-      pins.forEach((pin, i) => {
+      // ピンとの衝突
+      for (let i = 0; i < pins.length; i++) {
+        const pin = pins[i];
+
+        // 距離が遠いピンは衝突計算を行わない
+        const broadDistance =
+          cat.radius + pin.radius + 8;
+
+        const dx = cat.x - pin.x;
+        const dy = cat.y - pin.y;
+
+        if (
+          Math.abs(dx) > broadDistance ||
+          Math.abs(dy) > broadDistance
+        ) {
+          continue;
+        }
+
         checkPinCollision(cat, pin, i, frameContacts);
-      });
+      }
     }
 
     cat.pinTouching = frameContacts;
-  });
 
-  cats = cats.filter(cat => {
+    // 穴に入った猫を処理
     const holeTop = h - HOLE_HEIGHT;
 
     if (cat.y + cat.radius >= holeTop) {
@@ -925,11 +1098,108 @@ function updateCats(dt) {
         holes[2];
 
       awardHole(cat, hole);
-      return false;
+      cats.splice(c, 1);
     }
+  }
 
-    return true;
-  });
+  // 複数の猫が同時に得点しても、DOM更新は1フレームにつき1回にまとめる。
+  if (money !== moneyBeforeUpdate) {
+    updateMoney();
+  }
+}
+
+// ------------------------------------------------------------
+// 立体ピン描画
+// ピン画像は倍率・サイズごとに一度だけ生成して再利用する
+// ------------------------------------------------------------
+
+const pinSpriteCache = new Map();
+
+function createPinSprite(multiplier, radius) {
+  const key = `${multiplier}:${radius}`;
+  const cached = pinSpriteCache.get(key);
+  if (cached) return cached;
+
+  const padding = 5;
+  const size = Math.ceil(radius * 2 + padding * 2);
+  const sprite = document.createElement("canvas");
+  sprite.width = size;
+  sprite.height = size;
+
+  const spriteCtx = sprite.getContext("2d");
+  const x = size / 2;
+  const y = size / 2;
+  const color = pinColors[multiplier] || "#e6bd45";
+
+  // 外側の影
+  spriteCtx.beginPath();
+  spriteCtx.arc(x + 1.5, y + 2.5, radius, 0, Math.PI * 2);
+  spriteCtx.fillStyle = "rgba(70, 45, 20, 0.22)";
+  spriteCtx.fill();
+
+  // 本体グラデーション
+  const gradient = spriteCtx.createRadialGradient(
+    x - radius * 0.4,
+    y - radius * 0.45,
+    radius * 0.08,
+    x,
+    y,
+    radius
+  );
+  gradient.addColorStop(0, "#ffffff");
+  gradient.addColorStop(0.18, color);
+  gradient.addColorStop(0.68, color);
+  gradient.addColorStop(1, "#8a5d35");
+
+  spriteCtx.beginPath();
+  spriteCtx.arc(x, y, radius, 0, Math.PI * 2);
+  spriteCtx.fillStyle = gradient;
+  spriteCtx.fill();
+
+  // 外枠
+  spriteCtx.strokeStyle = "#6a4b27";
+  spriteCtx.lineWidth = 1.8;
+  spriteCtx.stroke();
+
+  // 上側の光沢
+  spriteCtx.beginPath();
+  spriteCtx.ellipse(
+    x - radius * 0.15,
+    y - radius * 0.38,
+    radius * 0.62,
+    radius * 0.28,
+    -0.2,
+    Math.PI,
+    Math.PI * 2
+  );
+  spriteCtx.fillStyle = "rgba(255,255,255,0.35)";
+  spriteCtx.fill();
+
+  // 立体リング
+  spriteCtx.beginPath();
+  spriteCtx.arc(x, y, radius * 0.84, 0, Math.PI * 2);
+  spriteCtx.strokeStyle = "rgba(255,255,255,0.2)";
+  spriteCtx.lineWidth = 1;
+  spriteCtx.stroke();
+
+  // 倍率文字
+  spriteCtx.fillStyle = "#000";
+  spriteCtx.font = `bold ${Math.max(9, radius * 0.82)}px "Hachi Maru Pop", sans-serif`;
+  spriteCtx.textAlign = "center";
+  spriteCtx.textBaseline = "middle";
+  spriteCtx.fillText("×" + multiplier, x, y + 0.5);
+
+  pinSpriteCache.set(key, sprite);
+  return sprite;
+}
+
+function drawPin(pin) {
+  const sprite = createPinSprite(pin.multiplier, pin.radius);
+  ctx.drawImage(
+    sprite,
+    pin.x - sprite.width / 2,
+    pin.y - sprite.height / 2
+  );
 }
 
 // ------------------------------------------------------------
@@ -942,30 +1212,17 @@ function drawBoard() {
 
   if (!w || !h) return;
 
-  ctx.clearRect(0, 0, w, h);
+  // CSS境界・高DPI端数を含め、Canvasの裏面全体を毎フレーム消去する。
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
 
   ctx.fillStyle = "#fff8e9";
   ctx.fillRect(0, 0, w, h);
 
   // ピン
-  pins.forEach(pin => {
-    ctx.beginPath();
-    ctx.arc(pin.x, pin.y, pin.radius, 0, Math.PI * 2);
-
-    ctx.fillStyle = pinColors[pin.multiplier];
-    ctx.fill();
-
-    ctx.strokeStyle = "#6a4b27";
-    ctx.lineWidth = 2.2;
-    ctx.stroke();
-
-    ctx.fillStyle = "#000";
-ctx.font = 'bold 15px "Hachi Maru Pop", sans-serif';
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-
-    ctx.fillText("×" + pin.multiplier, pin.x, pin.y);
-  });
+  pins.forEach(drawPin);
 
   // 底部の倍率穴
   holes.forEach(hole => {
@@ -1012,7 +1269,7 @@ ctx.font = 'bold 15px "Hachi Maru Pop", sans-serif';
       ctx.save();
 
       ctx.shadowColor = "#ffd84a";
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = 6;
       ctx.strokeStyle = "#ffe99a";
       ctx.lineWidth = 1.5;
 
@@ -1040,11 +1297,16 @@ ctx.font = 'bold 15px "Hachi Maru Pop", sans-serif';
 
   if (championMode) {
     drawChampionSparkles(performance.now());
+    drawBoardSparkles(performance.now());
   }
 
-  drawBoardSparkles(performance.now());
+  // 猫の描画
+  // Canvas外への描画をクリップして端の残像を防止
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, h);
+  ctx.clip();
 
-  // 落下中の猫
   cats.forEach(cat => {
     ctx.save();
 
@@ -1077,6 +1339,8 @@ ctx.font = 'bold 15px "Hachi Maru Pop", sans-serif';
 
     ctx.restore();
   });
+
+  ctx.restore();
 }
 
 // ------------------------------------------------------------
@@ -1084,10 +1348,18 @@ ctx.font = 'bold 15px "Hachi Maru Pop", sans-serif';
 // ------------------------------------------------------------
 
 function changeHoleMultipliers() {
+  // 絶対王者モードでは倍率を固定し、通常モードだけ抽選し直す。
+  if (championMode) {
+    holes.forEach(hole => {
+      hole.multiplier = 9999;
+    });
+    lastHoleChange = Date.now();
+    drawBoard();
+    return;
+  }
+
   holes.forEach(hole => {
-    hole.multiplier = championMode
-      ? 9999
-      : randomHoleMultiplier();
+    hole.multiplier = randomHoleMultiplier();
   });
 
   lastHoleChange = Date.now();
@@ -1103,7 +1375,10 @@ function gameLoop(now) {
 
   if (!gameStarted || paused) return;
 
-  const dt = Math.max(0, now - (gameLoop.lastTime || now));
+  // 背景に戻った際の巨大dtによる処理暴走を防ぐ
+  const rawDt = Math.max(0, now - (gameLoop.lastTime || now));
+  const dt = Math.min(rawDt, 50);
+
   gameLoop.lastTime = now;
 
   if (now - lastDropTime >= speed * 1000) {
@@ -1111,18 +1386,20 @@ function gameLoop(now) {
     lastDropTime = now;
   }
 
-  if (Date.now() - lastHoleChange >= 60000) {
+  // 穴倍率は60秒ごと
+  if (
+    !championMode &&
+    Date.now() - lastHoleChange >= HOLE_CHANGE_INTERVAL
+  ) {
     changeHoleMultipliers();
   }
 
-  let remaining = dt;
-
-  while (remaining > 0) {
-    const slice = Math.min(remaining, 16.67);
-    updateCats(slice);
-    remaining -= slice;
+  // ピン配置は30秒ごと
+  if (Date.now() - lastPinChange >= PIN_CHANGE_INTERVAL) {
+    changePinPositions();
   }
 
+  updateCats(dt);
   updateBoardSparkles(dt);
   drawBoard();
 
@@ -1193,7 +1470,7 @@ function openLotteryBefore() {
     `
       <div class="popup-item popup-text lottery-card">
         <div class="lottery-art">
-          <img src="images/kiyoneko_lottery.png" alt="豪華なくじ箱">
+          <img src="images/box.png" alt="豪華なくじ箱">
         </div>
 
         <div class="lottery-message">
@@ -1245,6 +1522,9 @@ function drawCollection() {
   const drawButton = document.getElementById("lottery-draw");
   if (drawButton) drawButton.disabled = true;
 
+  const lotteryCard = drawButton?.closest(".lottery-card");
+  lotteryCard?.classList.add("lottery-shaking");
+
   setTimeout(() => {
     collection.push(prize.id);
     newCollection.push(prize.id);
@@ -1258,7 +1538,7 @@ function drawCollection() {
       `
         <div class="popup-item popup-text reward-card">
           <div class="reward-art">
-            <img src="images/kiyoneko_reward.png" alt="豪華獲得演出">
+            <img src="images/get.jpg" alt="豪華獲得演出">
 
             <div class="reward-face">
               <img src="images/${prize.image}" alt="${prize.name}">
@@ -1356,46 +1636,32 @@ function resumeLoop() {
 
 // ------------------------------------------------------------
 // フリーズ解除
-// 猫消去・盤面再生成・タイマー再初期化
-// 進行データは維持
 // ------------------------------------------------------------
 
 function recoverGame() {
   console.warn("[キヨ猫あつめ] ゲーム復旧を実行します。");
 
-  // 古いアニメーションループを停止
   stopGameTicker();
-
-  // 猫だけを全消去
   cats = [];
 
-  // クリアボタンの二重表示防止
   removeClearButton();
 
-  // 一時的な抽選状態を解除
   drawPending = false;
-
-  // 進行状況は維持し、ゲームを再開可能にする
   paused = false;
 
-  // 現在時刻を基準にタイマーを再初期化
   const now = performance.now();
   gameLoop.lastTime = now;
   lastDropTime = now;
   lastHoleChange = Date.now();
+  lastPinChange = Date.now();
 
-  // 現在のステージ・モードに応じて盤面を再生成
   createBoard();
 
-  // すでに目標達成済みならクリアボタンを復元
   if (stageCleared && stage <= 5) {
     showClearButton();
   }
 
-  // 設定ポップアップを閉じる
   closePopup();
-
-  // ゲームループ再起動
   startGameTicker();
 
   console.info(
@@ -1411,10 +1677,12 @@ function openPopup(title, html) {
   popupTitle.textContent = title;
   popupContent.innerHTML = html;
   popupOverlay.classList.remove("hidden");
+  document.body.classList.add("popup-open");
 }
 
 function closePopup() {
   popupOverlay.classList.add("hidden");
+  document.body.classList.remove("popup-open");
 }
 
 popupClose.addEventListener("click", () => {
@@ -1501,39 +1769,25 @@ function speedCost() {
   return costs[speedLevel] ?? Infinity;
 }
 
-
 function multiplierCost() {
-  // レベル15までは従来の料金を維持
   if (multiplierLevel <= 15) {
     return Math.ceil(5 * Math.pow(1.7, multiplierLevel));
   }
 
-  // レベル15時点の料金を基準にする
   let cost = Math.ceil(5 * Math.pow(1.7, 15));
 
-  // レベル16以降は10レベルごとに上昇率を変更
   for (let level = 16; level <= multiplierLevel; level++) {
     let growthRate;
 
-    if (level <= 25) {
-      growthRate = 1.65;
-    } else if (level <= 35) {
-      growthRate = 1.60;
-    } else if (level <= 45) {
-      growthRate = 1.56;
-    } else if (level <= 55) {
-      growthRate = 1.52;
-    } else if (level <= 65) {
-      growthRate = 1.48;
-    } else if (level <= 75) {
-      growthRate = 1.45;
-    } else if (level <= 85) {
-      growthRate = 1.43;
-    } else if (level <= 95) {
-      growthRate = 1.40;
-    } else {
-      growthRate = 1.30;
-    }
+    if (level <= 25) growthRate = 1.65;
+    else if (level <= 35) growthRate = 1.60;
+    else if (level <= 45) growthRate = 1.56;
+    else if (level <= 55) growthRate = 1.52;
+    else if (level <= 65) growthRate = 1.48;
+    else if (level <= 75) growthRate = 1.45;
+    else if (level <= 85) growthRate = 1.43;
+    else if (level <= 95) growthRate = 1.40;
+    else growthRate = 1.30;
 
     cost = Math.ceil(cost * growthRate);
   }
@@ -1541,32 +1795,189 @@ function multiplierCost() {
   return cost;
 }
 
-
 // ------------------------------------------------------------
 // 基本獲得金額
 // ------------------------------------------------------------
 
 function calculateMultiplier(level) {
-  // Lv.1～10：1円ずつ上昇
-  if (level <= 10) {
-    return level;
-  }
-
-  // Lv.11～15：2円ずつ上昇
-  if (level <= 15) {
-    return 10 + (level - 10) * 2;
-  }
-
-  // Lv.16～20：3円ずつ上昇
-  if (level <= 20) {
-    return 20 + (level - 15) * 3;
-  }
-
-  // Lv.21以降：5円ずつ上昇
+  if (level <= 10) return level;
+  if (level <= 15) return 10 + (level - 10) * 2;
+  if (level <= 20) return 20 + (level - 15) * 3;
   return 35 + (level - 20) * 5;
 }
 
+// ------------------------------------------------------------
+// 強化処理
+// ------------------------------------------------------------
+
+function purchaseSpeedUpgrade() {
+  if (money < speedCost() || speedLevel >= MAX_SPEED_LEVEL) {
+    updateMoney();
+    return false;
+  }
+
+  money -= speedCost();
+  speedLevel++;
+
+  speed = Math.max(
+    MIN_DROP_INTERVAL,
+    Number((5 - speedLevel * 0.3).toFixed(1))
+  );
+
+  updateMoney();
+  return true;
+}
+
+function purchaseMultiplierUpgrade() {
+  const cost = multiplierCost();
+  if (money < cost) {
+    updateMoney();
+    return false;
+  }
+
+  money -= cost;
+  multiplierLevel++;
+  multiplier = calculateMultiplier(multiplierLevel + 1);
+
+  updateMoney();
+  return true;
+}
+// ------------------------------------------------------------
+// 長押し連続強化
+// ------------------------------------------------------------
+
+let upgradeHoldTimer = null;
+let upgradeHoldType = null;
+let upgradeHoldActive = false;
+let upgradeHoldTriggered = false;
+let upgradeHoldPointerId = null;
+let suppressUpgradeClick = false;
+
+function stopUpgradeHold() {
+  upgradeHoldActive = false;
+  upgradeHoldType = null;
+  upgradeHoldPointerId = null;
+
+  if (upgradeHoldTimer !== null) {
+    clearTimeout(upgradeHoldTimer);
+    upgradeHoldTimer = null;
+  }
+
+  document.body.classList.remove("upgrade-hold-active");
+}
+
+function performUpgrade(type) {
+  if (type === "speed") {
+    return purchaseSpeedUpgrade();
+  }
+
+  if (type === "mult") {
+    return purchaseMultiplierUpgrade();
+  }
+
+  return false;
+}
+
+function startUpgradeHold(type, pointerId) {
+  if (upgradeHoldActive) return;
+
+  upgradeHoldActive = true;
+  upgradeHoldType = type;
+  upgradeHoldPointerId = pointerId;
+  upgradeHoldTriggered = false;
+  document.body.classList.add("upgrade-hold-active");
+
+  // 350ms押し続けたら購入を開始し、その後120ms間隔で連続購入。
+  const repeatUpgrade = () => {
+    if (!upgradeHoldActive) return;
+
+    const purchased = performUpgrade(upgradeHoldType);
+    if (!purchased) {
+      const wasTriggered = upgradeHoldTriggered;
+      stopUpgradeHold();
+      if (wasTriggered) openUpgradeMenu();
+      return;
+    }
+
+    upgradeHoldTriggered = true;
+    upgradeHoldTimer = setTimeout(repeatUpgrade, 120);
+  };
+
+  upgradeHoldTimer = setTimeout(repeatUpgrade, 350);
+}
+
+function bindUpgradeHold(button, type) {
+  if (!button) return;
+
+  button.onpointerdown = event => {
+    if (button.disabled) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    startUpgradeHold(type, event.pointerId);
+  };
+
+  button.onclick = event => {
+    // 長押し後に発生するclickによる二重購入を防止。
+    if (suppressUpgradeClick) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (upgradeHoldTriggered) {
+      event.preventDefault();
+      upgradeHoldTriggered = false;
+      openUpgradeMenu();
+      return;
+    }
+
+    // 350ms未満のタップは1回だけ購入。
+    performUpgrade(type);
+    openUpgradeMenu();
+  };
+}
+
+window.addEventListener("pointerup", event => {
+  if (!upgradeHoldActive) return;
+  if (event.pointerId !== upgradeHoldPointerId) return;
+
+  const wasHolding = upgradeHoldTriggered;
+  stopUpgradeHold();
+
+  if (wasHolding) {
+    suppressUpgradeClick = true;
+
+    // pointerup直後にブラウザが発生させるclickを通過させてから表示更新。
+    setTimeout(() => {
+      suppressUpgradeClick = false;
+      upgradeHoldTriggered = false;
+      openUpgradeMenu();
+    }, 0);
+  }
+});
+
+window.addEventListener("pointercancel", event => {
+  if (!upgradeHoldActive) return;
+  if (event.pointerId !== upgradeHoldPointerId) return;
+
+  const wasHolding = upgradeHoldTriggered;
+  stopUpgradeHold();
+  upgradeHoldTriggered = false;
+
+  if (wasHolding) openUpgradeMenu();
+});
+
+window.addEventListener("blur", () => {
+  stopUpgradeHold();
+  upgradeHoldTriggered = false;
+  suppressUpgradeClick = false;
+});
+// ------------------------------------------------------------
+// 強化メニュー
+// ------------------------------------------------------------
+
 function openUpgradeMenu() {
+  stopUpgradeHold();
+
   const speedMaxed = speedLevel >= MAX_SPEED_LEVEL;
   const currentSpeedCost = speedCost();
   const currentMultiplierCost = multiplierCost();
@@ -1576,11 +1987,11 @@ function openUpgradeMenu() {
     `
       <div class="popup-item">
         <strong>そくど</strong>
-        <p>現在：${speed.toFixed(1)}秒</p>
-        <p>Lv.${speedLevel}/${MAX_SPEED_LEVEL}</p>
-        <p>次の強化：${speedMaxed
+        <p>現在：<span id="speed-current-value">${speed.toFixed(1)}秒</span></p>
+        <p><span id="speed-level-value">Lv.${speedLevel}/${MAX_SPEED_LEVEL}</span></p>
+        <p>次の強化：<span id="speed-cost-value">${speedMaxed
           ? "---"
-          : currentSpeedCost.toLocaleString() + "円"}
+          : currentSpeedCost.toLocaleString() + "円"}</span>
         </p>
         <button
           id="speed-up"
@@ -1593,9 +2004,9 @@ function openUpgradeMenu() {
 
       <div class="popup-item">
         <strong>ばいりつ</strong>
-        <p>現在：${multiplier}円</p>
-        <p>Lv.${multiplierLevel + 1}</p>
-        <p>次の強化：${currentMultiplierCost.toLocaleString()}円</p>
+        <p>現在：<span id="mult-current-value">${multiplier}円</span></p>
+        <p><span id="mult-level-value">Lv.${multiplierLevel + 1}</span></p>
+        <p>次の強化：<span id="mult-cost-value">${currentMultiplierCost.toLocaleString()}円</span></p>
         <button
           id="mult-up"
           class="${money < currentMultiplierCost
@@ -1607,34 +2018,16 @@ function openUpgradeMenu() {
     `
   );
 
-  document.getElementById("speed-up").onclick = () => {
-    if (money < speedCost() || speedLevel >= MAX_SPEED_LEVEL) return;
+  bindUpgradeHold(
+    document.getElementById("speed-up"),
+    "speed"
+  );
 
-    money -= speedCost();
-    speedLevel++;
-
-    speed = Math.max(
-      MIN_DROP_INTERVAL,
-      Number((5 - speedLevel * 0.3).toFixed(1))
-    );
-
-    updateMoney();
-    openUpgradeMenu();
-  };
-
-document.getElementById("mult-up").onclick = () => {
-  const cost = multiplierCost();
-  if (money < cost) return;
-
-  money -= cost;
-  multiplierLevel++;
-  multiplier = calculateMultiplier(multiplierLevel + 1);
-
-  updateMoney();
-  openUpgradeMenu();
-};
+  bindUpgradeHold(
+    document.getElementById("mult-up"),
+    "mult"
+  );
 }
-
 // ------------------------------------------------------------
 // コレクション画像の拡大表示
 // ------------------------------------------------------------
@@ -1646,7 +2039,6 @@ function openCollectionImage(image) {
 
   const id = image.dataset.collectionId;
 
-  // 所持しているコレクションだけ拡大できる
   if (!id || !collection.includes(id)) {
     return;
   }
@@ -1684,15 +2076,15 @@ function openCollectionMenu() {
           ? '<div class="throne-layer" aria-hidden="true">♛</div>'
           : ""}
 
-<div class="collection-face">
-  ${owned
-    ? `<img
-        src="images/${c.image}"
-        alt="${c.name}"
-        data-collection-id="${c.id}"
-      >`
-    : "🔒"}
-</div>
+        <div class="collection-face">
+          ${owned
+            ? `<img
+                src="images/${c.image}"
+                alt="${c.name}"
+                data-collection-id="${c.id}"
+              >`
+            : "🔒"}
+        </div>
 
         <p class="collection-name">${owned ? c.name : "SECRET"}</p>
 
@@ -1756,7 +2148,6 @@ function openSettingsMenu() {
     `
   );
 
-  // フリーズ解除ボタン
   document.getElementById("freeze-recovery").onclick = () => {
     recoverGame();
   };
@@ -1787,24 +2178,22 @@ function openSettingsMenu() {
   document.getElementById("champ-toggle").onchange = e => {
     championMode = e.target.checked;
 
-    // 穴の倍率変更
     holes.forEach(hole => {
       hole.multiplier = championMode
         ? 9999
         : randomHoleMultiplier();
     });
 
-    // ピンの倍率変更
     if (championMode) {
       pins.forEach(pin => {
         pin.multiplier = 100;
       });
     } else {
-      // 通常モードでは同じ倍率を最大2個に制限
       assignNormalPinMultipliers();
     }
 
     lastHoleChange = Date.now();
+    lastPinChange = Date.now();
 
     createSparkles();
 
@@ -1844,6 +2233,7 @@ popupContent.addEventListener("click", e => {
 
   if (e.target.id === "reset-confirm") {
     stopGameTicker();
+    stopUpgradeHold();
 
     stage = 1;
     money = 0;
@@ -1884,19 +2274,24 @@ popupContent.addEventListener("click", e => {
     updateBGM();
   }
 });
+
+// ------------------------------------------------------------
 // コレクション画像をクリックしたときに拡大
+// ------------------------------------------------------------
+
 popupContent.addEventListener("click", e => {
   const image = e.target.closest(".collection-face img");
-
   if (!image) return;
 
   openCollectionImage(image);
 });
 
+// ------------------------------------------------------------
 // 拡大画像を閉じる
+// ------------------------------------------------------------
+
 collectionImageClose.addEventListener("click", closeCollectionImage);
 
-// 拡大画像そのもの、または背景をクリックして閉じる
 collectionImageOverlay.addEventListener("click", e => {
   if (
     e.target === collectionImageOverlay ||
@@ -1906,7 +2301,6 @@ collectionImageOverlay.addEventListener("click", e => {
   }
 });
 
-// Escapeキーでも閉じられるようにする
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
     closeCollectionImage();
@@ -1926,6 +2320,7 @@ console.info(
 );
 
 printPointHistory();
+
 // ------------------------------------------------------------
 // はちまるポップ読み込み確認・Canvas再描画
 // ------------------------------------------------------------
@@ -1952,10 +2347,8 @@ printPointHistory();
     if (fontLoaded) {
       console.log("[フォント] はちまるポップ使用可能");
 
-      // Canvasのフォントを明示的に指定
       ctx.font = 'bold 15px "Hachi Maru Pop", sans-serif';
 
-      // ゲーム開始済みなら盤面を再描画
       if (gameStarted) {
         drawBoard();
       }
