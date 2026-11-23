@@ -235,27 +235,25 @@ button:disabled {
   padding: 14px;
   flex-shrink: 0;
 
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
   align-items: center;
 }
 
 #life-count {
-  justify-self: start;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 17px;
   color: #f5df9a;
 }
 
 #game-header h1 {
-  grid-column: 2;
   margin: 0;
   font-size: clamp(25px, 6vw, 32px);
   color: #fff;
-  text-align: center;
-  white-space: nowrap;
-}
 
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
 /* ステータス */
 
 .status-area {
@@ -908,7 +906,7 @@ button:disabled {
    ============================================================ */
 @media (max-width: 600px) {
   #game-header { padding: 7px 8px; }
-  #life-count { font-size: 11px; }
+  #game-header h1 { font-size: clamp(21px, 5.5vw, 27px); }
   #game-header h1 { font-size: clamp(21px, 5.5vw, 27px); }
   .status-area { padding: 4px 7px 3px; gap: 2px; }
   .status-box { min-height: 36px; padding: 4px 9px; gap: 6px; border-radius: 9px; }

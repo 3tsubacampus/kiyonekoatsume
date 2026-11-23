@@ -585,7 +585,7 @@ function updateGoal() {
     ? 10000 * Math.pow(10, stage - 1)
     : Infinity;
 
-  goalValue.textContent = stage <= 5 ? fmt(goal) : "∞";
+  goalValue.textContent = stage <= 5 ? `${fmt(goal)} えん` : "∞";
   resetButton.classList.toggle("hidden", stage < 6);
 }
 function updateMoney() {
@@ -2322,7 +2322,7 @@ function openRulesScreen() {
         <p>✨ ピンや穴の数字が大きいほど、もらえるおかねも増えるよ。</p>
         <p>⬆️ 「つうじょうきょうか」で落下スピードや倍率を強化しよう。</p>
         <p>🎁 目標ポイントに届いたら「もくひょうたっせい！」を押して、くじに挑戦！</p>
-        <p>🏆 景品を集めて、絶対王者を目指そう！</p>
+        <p>🏆 おかねを集めて、絶対王者を目指そう！</p>
       </div>
 
       <p class="rules-close-hint">
