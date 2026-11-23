@@ -33,10 +33,9 @@ button {
 
 /* すべてのボタンの押し込み演出 */
 button:active:not(:disabled) {
-  animation-play-state: paused;
   transform: translateY(3px) scale(0.96);
   filter: brightness(0.88);
-  box-shadow: inset 0 2px 5px #0008 !important;
+  box-shadow: inset 0 2px 5px #0008;
 }
 
 button:disabled {
@@ -880,4 +879,23 @@ button:disabled {
   #game-screen { padding-bottom: 68px; }
   #bottom-menu { padding: 3px; }
   .menu-button { min-height: 48px; font-size: 13px; }
+}
+body.popup-open #stage-clear-button {
+  display: none !important;
+}
+body,
+button,
+input,
+textarea {
+  font-family: "Hachi Maru Pop", sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -960,7 +960,7 @@ function drawBoard() {
     ctx.stroke();
 
     ctx.fillStyle = "#000";
-    ctx.font = "bold 19px sans-serif";
+ctx.font = 'bold 15px "Hachi Maru Pop", sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -1027,7 +1027,7 @@ function drawBoard() {
     }
 
     ctx.fillStyle = championMode ? "#4b3000" : "#fff";
-    ctx.font = "bold 19px sans-serif";
+    ctx.font = 'bold 19px "Hachi Maru Pop", sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -1141,7 +1141,7 @@ function showClearButton() {
   const button = document.createElement("button");
   button.id = "stage-clear-button";
   button.className = "stage-clear";
-  button.innerHTML = "もくひょう<br>たっせい！";
+  button.innerHTML = "もくひょうたっせい！";
 
   const goalBox = goalValue.closest(".goal-box");
 
@@ -1926,3 +1926,43 @@ console.info(
 );
 
 printPointHistory();
+// ------------------------------------------------------------
+// はちまるポップ読み込み確認・Canvas再描画
+// ------------------------------------------------------------
+
+(async () => {
+  try {
+    console.log("[フォント] 読み込み開始：Hachi Maru Pop");
+
+    const loadedFonts = await document.fonts.load(
+      '16px "Hachi Maru Pop"',
+      "きよ猫あつめ"
+    );
+
+    await document.fonts.ready;
+
+    const fontLoaded = document.fonts.check(
+      '16px "Hachi Maru Pop"',
+      "きよ猫あつめ"
+    );
+
+    console.log("[フォント] 読み込み結果:", loadedFonts);
+    console.log("[フォント] 使用可能:", fontLoaded);
+
+    if (fontLoaded) {
+      console.log("[フォント] はちまるポップ使用可能");
+
+      // Canvasのフォントを明示的に指定
+      ctx.font = 'bold 15px "Hachi Maru Pop", sans-serif';
+
+      // ゲーム開始済みなら盤面を再描画
+      if (gameStarted) {
+        drawBoard();
+      }
+    } else {
+      console.error("[フォント] 読み込みに失敗。標準フォントで表示します。");
+    }
+  } catch (error) {
+    console.error("[フォント読み込みエラー]", error);
+  }
+})();
