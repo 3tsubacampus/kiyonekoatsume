@@ -31,6 +31,20 @@ const collectionLargeImage =
 const collectionImageClose =
   document.getElementElementById?.("collection-image-close") ||
   document.getElementById("collection-image-close");
+// ------------------------------------------------------------
+// 周回数
+// ------------------------------------------------------------
+
+let lifeCount = Number(localStorage.getItem("kiyoneko-life-count")) || 1;
+
+function updateLifeCount() {
+  const lifeElement = document.getElementById("life-count");
+  if (!lifeElement) return;
+
+  lifeElement.textContent = `人生${lifeCount}周目`;
+
+}
+updateLifeCount();
 
 // ------------------------------------------------------------
 // ゲーム状態
@@ -350,7 +364,62 @@ function drawBoardSparkles(now) {
 
   ctx.restore();
 }
+// ------------------------------------------------------------
+// 非表示中の収入計測
+// ------------------------------------------------------------
 
+const idleIncomeSamples = [];
+const IDLE_INCOME_WINDOW = 60000; // 直近60秒
+let hiddenAt = null;
+let hiddenIncomeRate = 0;
+let incomeTrackingStartedAt = Date.now();
+
+// 通常プレイ中に獲得したお金を記録
+function recordIdleIncome(amount) {
+  // 非表示中の補填金を計測に含めない
+  if (document.visibilityState !== "visible") return;
+  if (!gameStarted || paused) return;
+
+  const now = Date.now();
+
+  idleIncomeSamples.push({
+    time: now,
+    amount
+  });
+
+  // 60秒より古いデータを削除
+  while (
+    idleIncomeSamples.length > 0 &&
+    now - idleIncomeSamples[0].time > IDLE_INCOME_WINDOW
+  ) {
+    idleIncomeSamples.shift();
+  }
+}
+
+// 直近の収入から1秒あたりの平均収入を算出
+function calculateIdleIncomeRate() {
+  const now = Date.now();
+
+  // 古い収入データを削除
+  while (
+    idleIncomeSamples.length > 0 &&
+    now - idleIncomeSamples[0].time > IDLE_INCOME_WINDOW
+  ) {
+    idleIncomeSamples.shift();
+  }
+
+  const totalIncome = idleIncomeSamples.reduce(
+    (sum, sample) => sum + sample.amount,
+    0
+  );
+
+  const elapsed = Math.min(
+    IDLE_INCOME_WINDOW,
+    Math.max(1000, now - incomeTrackingStartedAt)
+  );
+
+  return totalIncome / (elapsed / 1000);
+}
 // ------------------------------------------------------------
 // ポイント取得履歴
 // ------------------------------------------------------------
@@ -677,6 +746,51 @@ function stopGameTicker() {
     animationId = null;
   }
 }
+// ------------------------------------------------------------
+// ブラウザ非表示中の収入補填
+// ------------------------------------------------------------
+
+document.addEventListener("visibilitychange", () => {
+  // ブラウザを離れたとき
+  if (document.visibilityState === "hidden") {
+    if (!gameStarted || paused) {
+      hiddenAt = null;
+      hiddenIncomeRate = 0;
+      return;
+    }
+
+    hiddenAt = Date.now();
+    hiddenIncomeRate = calculateIdleIncomeRate();
+    return;
+  }
+
+  // ブラウザに戻ったとき
+  if (document.visibilityState === "visible") {
+    if (hiddenAt === null) return;
+
+    const elapsed = Math.max(0, Date.now() - hiddenAt);
+
+    if (gameStarted && !paused && hiddenIncomeRate > 0) {
+      const earned = Math.floor(
+        hiddenIncomeRate * (elapsed / 1000)
+      );
+
+      if (earned > 0) {
+        money += earned;
+
+        console.log(
+          `[非表示収入] ${Math.floor(elapsed / 1000)}秒間 ` +
+          `${fmt(earned)}円獲得`
+        );
+
+        updateMoney();
+      }
+    }
+
+    hiddenAt = null;
+    hiddenIncomeRate = 0;
+  }
+});
 
 // ------------------------------------------------------------
 // ゲーム開始
@@ -700,6 +814,11 @@ startButton.addEventListener("click", () => {
 
     gameStarted = true;
     paused = false;
+// 非表示収入の計測を初期化
+idleIncomeSamples.length = 0;
+incomeTrackingStartedAt = Date.now();
+hiddenAt = null;
+hiddenIncomeRate = 0;
 
     resizeCanvas();
     createBoard();
@@ -948,7 +1067,7 @@ function checkPinCollision(cat, pin, index, frameContacts) {
 
     const gained = multiplier * pin.multiplier;
     money += gained;
-
+     recordIdleIncome(gained)
     recordPointGain("倍率ピン", pin.multiplier, gained, cat);
 
     if (stage <= 5 && money >= goal && !stageCleared) {
@@ -988,7 +1107,7 @@ function awardHole(cat, hole) {
 
   const gained = multiplier * hole.multiplier;
   money += gained;
-
+recordIdleIncome(gained);
   recordPointGain("倍率穴", hole.multiplier, gained, cat);
 
   if (stage <= 5 && money >= goal && !stageCleared) {
@@ -1088,8 +1207,11 @@ function updateCats(dt) {
 
     cat.pinTouching = frameContacts;
 
+
     // 穴に入った猫を処理
-    const holeTop = h - HOLE_HEIGHT;
+    // 判定位置を穴の上端から12px下げる
+    const holeJudgeOffset = 12;
+    const holeTop = h - HOLE_HEIGHT + holeJudgeOffset;
 
     if (cat.y + cat.radius >= holeTop) {
       const x = Math.max(0, Math.min(w - 0.01, cat.x));
@@ -1101,7 +1223,8 @@ function updateCats(dt) {
       awardHole(cat, hole);
       cats.splice(c, 1);
     }
-  }
+    }
+
 
   // 複数の猫が同時に得点しても、DOM更新は1フレームにつき1回にまとめる。
   if (money !== moneyBeforeUpdate) {
@@ -1238,7 +1361,7 @@ function drawBoard() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.restore();
 
-  ctx.fillStyle = "#fff8e9";
+  ctx.fillStyle = getComputedStyle(canvas).backgroundColor;
   ctx.fillRect(0, 0, w, h);
 
   // ピン
@@ -1467,8 +1590,6 @@ function showClearButton() {
 
   button.onclick = () => {
     removeClearButton();
-    paused = true;
-    stopGameTicker();
     openLotteryBefore();
   };
 
@@ -1527,9 +1648,22 @@ function openLotteryBefore() {
 // コレクション抽選・獲得演出
 // ------------------------------------------------------------
 
+
 function drawCollection() {
   if (drawPending) return;
+
+  // クリア目標分のポイントが足りない場合は抽選しない
+  if (Number.isFinite(goal) && money < goal) {
+    return;
+  }
+
   drawPending = true;
+
+  // クリア目標分のポイントを消費
+  if (Number.isFinite(goal)) {
+    money -= goal;
+    updateMoney();
+  }
 
   const normalFaces = collectibleFaces.filter(
     c => c.id !== "secret"
@@ -1553,12 +1687,16 @@ function drawCollection() {
     finishStage();
     return;
   }
-
   const drawButton = document.getElementById("lottery-draw");
   if (drawButton) drawButton.disabled = true;
 
   const lotteryCard = drawButton?.closest(".lottery-card");
   lotteryCard?.classList.add("lottery-shaking");
+
+  // ドラムロール再生
+  const drumRoll = new Audio("audio/drum.mp3");
+  drumRoll.volume = 1.0;
+  drumRoll.play().catch(() => {});
 
   setTimeout(() => {
     collection.push(prize.id);
@@ -1604,7 +1742,7 @@ function drawCollection() {
       closePopup();
       finishStage();
     };
-  }, 1200);
+  }, 1750);
 }
 
 // ------------------------------------------------------------
@@ -1828,14 +1966,15 @@ function multiplierCost() {
   for (let level = 16; level <= multiplierLevel; level++) {
     let growthRate;
 
-    if (level <= 25) growthRate = 1.65;
-    else if (level <= 35) growthRate = 1.60;
-    else if (level <= 45) growthRate = 1.56;
-    else if (level <= 55) growthRate = 1.52;
-    else if (level <= 65) growthRate = 1.48;
-    else if (level <= 75) growthRate = 1.45;
-    else if (level <= 85) growthRate = 1.43;
-    else if (level <= 95) growthRate = 1.40;
+    if (level <= 20) growthRate = 1.30;
+    else if (level <= 25) growthRate = 1.10;
+    else if (level <= 35) growthRate = 1.10;
+    else if (level <= 45) growthRate = 1.10;
+    else if (level <= 55) growthRate = 1.10;
+    else if (level <= 65) growthRate = 1.20;
+    else if (level <= 75) growthRate = 1.20;
+    else if (level <= 85) growthRate = 1.20;
+    else if (level <= 95) growthRate = 1.20;
     else growthRate = 1.30;
 
     cost = Math.ceil(cost * growthRate);
@@ -1843,16 +1982,16 @@ function multiplierCost() {
 
   return cost;
 }
-
 // ------------------------------------------------------------
 // 基本獲得金額
 // ------------------------------------------------------------
 
 function calculateMultiplier(level) {
-  if (level <= 10) return level;
-  if (level <= 15) return 10 + (level - 10) * 2;
-  if (level <= 20) return 20 + (level - 15) * 3;
-  return 35 + (level - 20) * 5;
+  if (level <= 10) return 1 + level * 2;
+  if (level <= 20) return 21 + (level - 10) * 3;
+  if (level <= 29) return 51 + (level - 20) * 5;
+  if (level === 30) return 96;
+  return 100 + (level - 30) * 10;
 }
 
 // ------------------------------------------------------------
@@ -1886,7 +2025,7 @@ function purchaseMultiplierUpgrade() {
 
   money -= cost;
   multiplierLevel++;
-  multiplier = calculateMultiplier(multiplierLevel + 1);
+  multiplier = calculateMultiplier(multiplierLevel);
 
   updateMoney();
   return true;
@@ -2034,36 +2173,49 @@ function openUpgradeMenu() {
   openPopup(
     "つうじょうきょうか",
     `
-      <div class="popup-item">
-        <strong>そくど</strong>
-        <p>現在：<span id="speed-current-value">${speed.toFixed(1)}秒</span></p>
-        <p><span id="speed-level-value">Lv.${speedLevel}/${MAX_SPEED_LEVEL}</span></p>
-        <p>次の強化：<span id="speed-cost-value">${speedMaxed
-          ? "---"
-          : currentSpeedCost.toLocaleString() + "円"}</span>
-        </p>
-        <button
-          id="speed-up"
-          class="${money < currentSpeedCost || speedMaxed
-            ? "cannot-afford"
-            : ""}"
-          ${money < currentSpeedCost || speedMaxed ? "disabled" : ""}
-        >${speedMaxed ? "レベルマックス" : "強化する"}</button>
-      </div>
+<div class="popup-item">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <strong>そくど</strong>
+    <strong id="speed-level-value">Lv.${speedLevel}/${MAX_SPEED_LEVEL}</strong>
+  </div>
 
-      <div class="popup-item">
-        <strong>ばいりつ</strong>
-        <p>現在：<span id="mult-current-value">${multiplier}円</span></p>
-        <p><span id="mult-level-value">Lv.${multiplierLevel + 1}</span></p>
-        <p>次の強化：<span id="mult-cost-value">${currentMultiplierCost.toLocaleString()}円</span></p>
-        <button
-          id="mult-up"
-          class="${money < currentMultiplierCost
-            ? "cannot-afford"
-            : ""}"
-          ${money < currentMultiplierCost ? "disabled" : ""}
-        >強化する</button>
-      </div>
+  <p>現在の速度：<span id="speed-current-value">${speed.toFixed(1)}秒</span></p>
+
+  <p>つぎの強化費用：
+    <span id="speed-cost-value">${speedMaxed
+      ? "---"
+      : currentSpeedCost.toLocaleString() + "円"}</span>
+  </p>
+
+  <button
+    id="speed-up"
+    class="${money < currentSpeedCost || speedMaxed
+      ? "cannot-afford"
+      : ""}"
+    ${money < currentSpeedCost || speedMaxed ? "disabled" : ""}
+  >${speedMaxed ? "さいだいれべる" : "強化する"}</button>
+</div>
+
+<div class="popup-item">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <strong>ばいりつ</strong>
+    <strong id="mult-level-value">Lv.${multiplierLevel + 1}</strong>
+  </div>
+
+  <p>現在の倍率：<span id="mult-current-value">${multiplier}円</span></p>
+
+  <p>つぎの強化費用：
+    <span id="mult-cost-value">${currentMultiplierCost.toLocaleString()}円</span>
+  </p>
+
+  <button
+    id="mult-up"
+    class="${money < currentMultiplierCost
+      ? "cannot-afford"
+      : ""}"
+    ${money < currentMultiplierCost ? "disabled" : ""}
+  >強化する</button>
+</div>
     `
   );
 
@@ -2341,12 +2493,17 @@ popupContent.addEventListener("click", e => {
     closePopup();
   }
 
-  if (e.target.id === "reset-confirm") {
-    stopGameTicker();
-    stopUpgradeHold();
+if (e.target.id === "reset-confirm") {
+  stopGameTicker();
+  stopUpgradeHold();
 
-    stage = 1;
-    money = 0;
+  // 周回数を増やして保存
+  lifeCount++;
+  localStorage.setItem("kiyoneko-life-count", lifeCount);
+  updateLifeCount();
+
+  stage = 1;
+  money = 0;
 
     speedLevel = 0;
     speed = 5;
@@ -2368,7 +2525,11 @@ popupContent.addEventListener("click", e => {
     boardSparkles = [];
 
     pointHistory.length = 0;
-
+// 非表示収入の計測データもリセット
+idleIncomeSamples.length = 0;
+incomeTrackingStartedAt = Date.now();
+hiddenAt = null;
+hiddenIncomeRate = 0;
     previousPattern = -1;
 
     console.info(
@@ -2441,14 +2602,14 @@ printPointHistory();
 
     const loadedFonts = await document.fonts.load(
       '16px "Hachi Maru Pop"',
-      "きよ猫あつめ"
+      "きよねこあつめ"
     );
 
     await document.fonts.ready;
 
     const fontLoaded = document.fonts.check(
       '16px "Hachi Maru Pop"',
-      "きよ猫あつめ"
+      "きよねこあつめ"
     );
 
     console.log("[フォント] 読み込み結果:", loadedFonts);

@@ -10,7 +10,7 @@
   --black: #111;
   --gold: #d6b45b;
   --light-gold: #f5df9a;
-  --ivory: #fff8e9;
+  --ivory: #b39f7e;
 }
 
 body {
@@ -170,7 +170,7 @@ button:disabled {
 
 
 .title-cat-face.spinning img {
-  animation: title-cat-spin 0.18s linear infinite;
+  animation: title-cat-spin 0.10s linear infinite;
 }
 
 
@@ -232,15 +232,28 @@ button:disabled {
 #game-header {
   width: 100%;
   background: var(--red);
-  text-align: center;
   padding: 14px;
   flex-shrink: 0;
+
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+
+#life-count {
+  justify-self: start;
+  white-space: nowrap;
+  font-size: 13px;
+  color: #f5df9a;
 }
 
 #game-header h1 {
+  grid-column: 2;
   margin: 0;
   font-size: clamp(25px, 6vw, 32px);
   color: #fff;
+  text-align: center;
+  white-space: nowrap;
 }
 
 /* ステータス */
@@ -857,7 +870,6 @@ button:disabled {
   height: 120px;
   object-fit: contain;
   filter: drop-shadow(0 0 12px #fff8b8);
-  animation: reward-face-pop 0.65s cubic-bezier(.2, 1.6, .4, 1);
 }
 
 /* タイトルのキヨ猫がゆっくりゆれる */
@@ -896,6 +908,7 @@ button:disabled {
    ============================================================ */
 @media (max-width: 600px) {
   #game-header { padding: 7px 8px; }
+  #life-count { font-size: 11px; }
   #game-header h1 { font-size: clamp(21px, 5.5vw, 27px); }
   .status-area { padding: 4px 7px 3px; gap: 2px; }
   .status-box { min-height: 36px; padding: 4px 9px; gap: 6px; border-radius: 9px; }
