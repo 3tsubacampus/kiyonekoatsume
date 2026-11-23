@@ -81,7 +81,7 @@ let seOn = true;
 const MAX_SPEED_LEVEL = 12;
 const MIN_DROP_INTERVAL = 1.5;
 
-const PIN_RADIUS = 15;
+const PIN_RADIUS = 22.5;
 const HOLE_HEIGHT = 42;
 const CAT_RADIUS = 30;
 const CAT_COLLISION_RADIUS = CAT_RADIUS * 0.8;
@@ -1207,6 +1207,25 @@ function drawPin(pin) {
 // 描画
 // ------------------------------------------------------------
 
+// 指定した色を少し暗くする
+function darkenHexColor(hex, amount = 0.12) {
+  const normalized = hex.replace("#", "");
+
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return hex;
+  }
+
+  const value = parseInt(normalized, 16);
+
+  const r = Math.round(((value >> 16) & 255) * (1 - amount));
+  const g = Math.round(((value >> 8) & 255) * (1 - amount));
+  const b = Math.round((value & 255) * (1 - amount));
+
+  return `#${[r, g, b]
+    .map(v => v.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 function drawBoard() {
   const w = boardW();
   const h = boardH();
@@ -1242,8 +1261,23 @@ function drawBoard() {
 
       ctx.fillStyle = goldGradient;
     } else {
-      ctx.fillStyle =
+      const baseColor =
         holeColors[hole.multiplier] || "#8c65b8";
+
+      const holeGradient = ctx.createLinearGradient(
+        hole.x,
+        hole.y,
+        hole.x,
+        hole.y + hole.height
+      );
+
+      holeGradient.addColorStop(0, baseColor);
+      holeGradient.addColorStop(
+        1,
+        darkenHexColor(baseColor, 0.70)
+      );
+
+      ctx.fillStyle = holeGradient;
     }
 
     ctx.fillRect(
@@ -1315,7 +1349,7 @@ function drawBoard() {
     ctx.rotate(cat.rotation);
 
     if (catImage.complete && catImage.naturalWidth > 0) {
-      const drawSize = cat.radius * 2 * 5;
+      const drawSize = cat.radius * 2 * 4;
       const cropBottom = 2;
 
       ctx.imageSmoothingEnabled = true;
@@ -1332,7 +1366,7 @@ function drawBoard() {
         drawSize
       );
     } else {
-      ctx.font = `${cat.radius * 6}px sans-serif`;
+      ctx.font = `${cat.radius * 4.8}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(catEmoji, 0, 0);
