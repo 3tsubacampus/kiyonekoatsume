@@ -17,6 +17,7 @@ const popupOverlay = document.getElementById("popup-overlay");
 const popupTitle = document.getElementById("popup-title");
 const popupContent = document.getElementById("popup-content");
 const popupClose = document.getElementById("popup-close");
+let ignoreNextPopupClick = false;
 
 const collectionNotice = document.getElementById("collection-notice");
 const resetButton = document.getElementById("reset-button");
@@ -1701,15 +1702,25 @@ popupClose.addEventListener("click", () => {
 });
 
 popupOverlay.addEventListener("click", e => {
-  // ルール画面は、説明文や余白を含めてどこをタップしても閉じる。
-  if (
-    popupOverlay.classList.contains("rules-overlay") ||
-    e.target === popupOverlay
-  ) {
+
+  // ルール画面を開いた直後のクリックだけ無視する。
+  if (ignoreNextPopupClick) {
+    ignoreNextPopupClick = false;
+    return;
+  }
+
+  // ルール画面は、どこをタップしても閉じる。
+  if (popupOverlay.classList.contains("rules-overlay")) {
+    closePopup();
+    return;
+  }
+
+  // 通常のポップアップは背景部分を押したときだけ閉じる。
+  if (e.target === popupOverlay) {
     closePopup();
   }
-});
 
+});
 // ------------------------------------------------------------
 // メニュー
 // ------------------------------------------------------------
@@ -2121,8 +2132,8 @@ function openRulesScreen() {
     `
       <div class="rules-content">
         <p>🐈 猫は自動で落ちてくるよ。</p>
-        <p>🔴 ピンや下の穴に当たるとポイントゲット！</p>
-        <p>✨ ピンや穴の数字が大きいほど、もらえるポイントも増えるよ。</p>
+        <p>🔴 ピンに当たるか下の穴に入るとおかねゲット！</p>
+        <p>✨ ピンや穴の数字が大きいほど、もらえるおかねも増えるよ。</p>
         <p>⬆️ 「つうじょうきょうか」で落下スピードや倍率を強化しよう。</p>
         <p>🎁 目標ポイントに届いたら「もくひょうたっせい！」を押して、くじに挑戦！</p>
         <p>🏆 景品を集めて、絶対王者を目指そう！</p>
@@ -2198,10 +2209,15 @@ function openSettingsMenu() {
     `
   );
 
-  // ルール画面
-  document.getElementById("open-rules").onclick = () => {
-    openRulesScreen();
-  };
+// ルール画面
+document.getElementById("open-rules").addEventListener("click", event => {
+  event.preventDefault();
+
+  // 次のポップアップクリック処理を1回だけ無視する。
+  ignoreNextPopupClick = true;
+
+  openRulesScreen();
+});
 
   // ゲーム復旧
   document.getElementById("freeze-recovery").onclick = () => {
