@@ -598,23 +598,36 @@ function stopGameTicker() {
 // ------------------------------------------------------------
 
 startButton.addEventListener("click", () => {
+  if (startButton.disabled) return;
+  startButton.disabled = true;
+
+  const titleCatFace = document.querySelector(".title-cat-face");
   const playSound = new Audio("audio/burekiyo.mp3");
+  let started = false;
+
+  const beginGame = () => {
+    if (started) return;
+    started = true;
+    titleCatFace?.classList.remove("spinning");
+    titleScreen.classList.remove("active");
+    gameScreen.classList.add("active");
+    gameStarted = true;
+    paused = false;
+
+    resizeCanvas();
+    createBoard();
+
+    lastDropTime = performance.now();
+    lastHoleChange = Date.now();
+
+    startGameTicker();
+    updateBGM();
+  };
+
+  titleCatFace?.classList.add("spinning");
   playSound.currentTime = 0;
-  playSound.play().catch(() => {});
-
-  titleScreen.classList.remove("active");
-  gameScreen.classList.add("active");
-  gameStarted = true;
-  paused = false;
-
-  resizeCanvas();
-  createBoard();
-
-  lastDropTime = performance.now();
-  lastHoleChange = Date.now();
-
-  startGameTicker();
-  updateBGM();
+  playSound.addEventListener("ended", beginGame, { once: true });
+  playSound.play().catch(() => beginGame());
 });
 
 // ------------------------------------------------------------
@@ -1128,30 +1141,16 @@ function showClearButton() {
   const button = document.createElement("button");
   button.id = "stage-clear-button";
   button.className = "stage-clear";
-  button.textContent = "もくひょうたっせい！";
+  button.innerHTML = "もくひょう<br>たっせい！";
 
   const goalBox = goalValue.closest(".goal-box");
 
   const positionClearButton = () => {
     if (!goalBox) return;
-
-    const boxRect = goalBox.getBoundingClientRect();
-    const goalRect = goalValue.getBoundingClientRect();
-
-    const buttonWidth = boxRect.width * 0.5;
-
-    button.style.width = `${buttonWidth}px`;
-    button.style.height = `${goalRect.height}px`;
-    button.style.left = `${boxRect.right - buttonWidth - 6}px`;
-    button.style.top = `${goalRect.top}px`;
-
-    const fontSize = Math.min(
-      14,
-      goalRect.height * 0.65,
-      buttonWidth / 10
-    );
-
-    button.style.fontSize = `${Math.max(9, fontSize)}px`;
+    button.style.inset = "0";
+    button.style.width = "100%";
+    button.style.height = "100%";
+    button.style.fontSize = "clamp(12px, 3.5vw, 16px)";
   };
 
   button.onclick = () => {
@@ -1161,7 +1160,7 @@ function showClearButton() {
     openLotteryBefore();
   };
 
-  document.body.appendChild(button);
+  (goalBox || document.body).appendChild(button);
 
   positionClearButton();
 

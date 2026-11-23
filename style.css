@@ -118,6 +118,17 @@ button:disabled {
   animation: title-cat-shake 5.0s ease-in-out infinite;
 }
 
+
+.title-cat-face.spinning img {
+  animation: title-cat-spin 0.18s linear infinite;
+}
+
+
+@keyframes title-cat-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .title-cat-face img {
   width: 100%;
   height: 100%;
@@ -162,8 +173,10 @@ button:disabled {
   flex-direction: column;
   align-items: center;
   background: #111;
-  padding-bottom: 92px;
-  min-height: 100dvh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 84px;
 }
 
 #game-header {
@@ -232,11 +245,11 @@ button:disabled {
   width: 100%;
   max-width: 600px;
   padding: 0 10px;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   display: flex;
-  min-height: 280px;
-  height: min(62vh, 620px);
-  margin-bottom: 8px;
+  min-height: 0;
+  height: auto;
+  margin-bottom: 4px;
 }
 
 #game-canvas {
@@ -268,7 +281,7 @@ button:disabled {
   position: relative;
   flex: 1;
   min-width: 0;
-  min-height: 70px;
+  min-height: 58px;
   border: 1px solid var(--gold);
   border-radius: 10px;
   background: #1b1b1b;
@@ -277,17 +290,15 @@ button:disabled {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: 4px;
+  gap: 1px;
   font-size: 16px;
+  line-height: 1.2;
 }
 
 .menu-button:active {
   background: #4d000a;
 }
 
-.menu-icon {
-  font-size: 26px;
-}
 
 .notice {
   position: absolute;
@@ -327,9 +338,9 @@ button:disabled {
   position: relative;
   width: 100%;
   max-width: 420px;
-  max-height: 85vh;
+  max-height: calc(100dvh - 20px);
   overflow-y: auto;
-  padding: 24px 18px;
+  padding: 18px 14px;
   border-radius: 16px;
   background: #241719;
   border: 2px solid var(--gold);
@@ -530,8 +541,13 @@ button:disabled {
 
 /* ステージクリア表示 */
 
+.goal-box {
+  position: relative;
+}
+
+
 .stage-clear {
-  position: fixed;
+  position: absolute;
   z-index: 9999;
   display: flex;
   align-items: center;
@@ -565,9 +581,9 @@ button:disabled {
 
 @media (min-width: 601px) {
   #board-wrapper {
-    min-height: 400px;
-    height: min(68vh, 700px);
-    margin-bottom: 10px;
+    min-height: 0;
+    height: auto;
+    margin-bottom: 6px;
   }
 }
 
@@ -821,4 +837,47 @@ button:disabled {
   transform: translateY(3px) scale(0.96);
   filter: brightness(0.88);
   box-shadow: inset 0 2px 5px #0008;
+}
+
+/* ============================================================
+   スマホ縦画面：スクロールなしで主要画面を表示
+   ============================================================ */
+@media (max-width: 600px) {
+  #game-header { padding: 7px 8px; }
+  #game-header h1 { font-size: clamp(21px, 5.5vw, 27px); }
+  .status-area { padding: 4px 7px 3px; gap: 2px; }
+  .status-box { min-height: 36px; padding: 4px 9px; gap: 6px; border-radius: 9px; }
+  .status-label { font-size: 14px; }
+  #goal-value, #money-value { font-size: 19px; }
+  #board-wrapper { padding: 0 6px; margin-bottom: 2px; }
+  #bottom-menu { padding: 5px; gap: 4px; }
+  .menu-button { min-height: 54px; padding: 4px 2px; font-size: 14px; }
+  .popup-overlay { padding: 8px; }
+  .popup-window { max-height: calc(100dvh - 16px); padding: 14px 10px 10px; }
+  .popup-window h2 { font-size: 22px; margin: 0 0 9px; }
+  .popup-item { padding: 8px; margin: 5px 0; font-size: 16px; }
+  .popup-item button { padding: 9px; font-size: 16px; margin-top: 5px; }
+  .popup-text { line-height: 1.45; }
+  .lottery-art { max-width: min(220px, 42dvh); }
+  .lottery-message { margin: 5px 0; }
+  .lottery-message p { font-size: 18px; margin: 5px 0; }
+  .lottery-button { padding: 9px !important; }
+  .reward-art { max-width: min(260px, 38dvh); }
+  .reward-title { margin-top: 5px; }
+  .reward-new { font-size: 24px; }
+  .reward-title h3 { font-size: 21px; margin: 6px 0; }
+  .reward-title p { font-size: 14px; margin: 4px 0; }
+  .reward-stars { margin: 4px 0; font-size: 18px; }
+}
+
+/* 短い縦画面でも盤面とメニューを収める */
+@media (max-height: 700px) and (max-width: 600px) {
+  #game-header { padding: 4px 6px; }
+  #game-header h1 { font-size: 20px; }
+  .status-area { padding: 2px 6px; }
+  .status-box { min-height: 32px; padding: 3px 7px; }
+  #goal-value, #money-value { font-size: 17px; }
+  #game-screen { padding-bottom: 68px; }
+  #bottom-menu { padding: 3px; }
+  .menu-button { min-height: 48px; font-size: 13px; }
 }
