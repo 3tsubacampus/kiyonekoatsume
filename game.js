@@ -70,6 +70,7 @@ let lastHoleChange = 0;
 let lastPinChange = 0;
 
 let animationId = null;
+let lastLoopHeartbeat = 0;
 let previousPattern = -1;
 
 let lastCanvasWidth = 0;
@@ -95,7 +96,7 @@ let seOn = true;
 const MAX_SPEED_LEVEL = 12;
 const MIN_DROP_INTERVAL = 1.5;
 
-const PIN_RADIUS = 22.5;
+const PIN_RADIUS = 27;
 const HOLE_HEIGHT = 42;
 const CAT_RADIUS = 30;
 const CAT_COLLISION_RADIUS = CAT_RADIUS * 0.8;
@@ -544,16 +545,11 @@ function randomHoleMultiplier() {
   return randInt(1, 10);
 }
 
-function safePinX(rx, w) {
-  const margin = Math.min(PIN_WALL_MARGIN, w / 2);
-
-  const originalX = w * rx;
-  const minX = margin;
-  const maxX = w - margin;
-
-  if (minX >= maxX) return w / 2;
-
-  return Math.max(minX, Math.min(maxX, originalX));
+function safePinX(x, w) {
+  return Math.max(
+    PIN_RADIUS,
+    Math.min(w - PIN_RADIUS, x)
+  );
 }
 
 // ------------------------------------------------------------
@@ -594,19 +590,24 @@ function updateMoney() {
   const speedButton = document.getElementById("speed-up");
   const multButton = document.getElementById("mult-up");
 
-  if (speedButton) {
-    const maxed = speedLevel >= MAX_SPEED_LEVEL;
-    const canAfford = money >= speedCost();
+if (speedButton) {
+  const maxed = speedLevel >= MAX_SPEED_LEVEL;
+  const canAfford = money >= speedCost();
 
-    speedButton.disabled = maxed || !canAfford;
-    speedButton.classList.toggle(
-      "cannot-afford",
-      maxed || !canAfford
-    );
-    speedButton.textContent = maxed
-      ? "レベルマックス"
-      : "強化する";
+  const expectedText = maxed
+    ? "さいだいれべる"
+    : "強化する";
+
+  speedButton.disabled = maxed || !canAfford;
+  speedButton.classList.toggle(
+    "cannot-afford",
+    maxed || !canAfford
+  );
+
+  if (speedButton.textContent !== expectedText) {
+    speedButton.textContent = expectedText;
   }
+}
 
   if (multButton) {
     const canAfford = money >= multiplierCost();
@@ -839,68 +840,111 @@ hiddenIncomeRate = 0;
 
 // ------------------------------------------------------------
 // ピン位置の生成
+// 5ゾーン配置、中央ゾーン必須、ピン間隔を厳守
 // ------------------------------------------------------------
 
 function generatePinPositions(count) {
   const w = boardW();
   const h = boardH();
 
-  let p;
+  if (!w || !h || count <= 0) return [];
 
-  do {
-    p = randInt(0, pinPatterns.length - 1);
-  } while (p === previousPattern && pinPatterns.length > 1);
+  const CAT_DIAMETER = CAT_RADIUS * 2;
 
-  previousPattern = p;
+  // ピン外枠同士に猫2匹分の直径の空間を確保
+  const MIN_PIN_DISTANCE =
+    PIN_RADIUS * 2 + CAT_DIAMETER * 2;
 
-  const layout = pinPatterns[p];
+  const MIN_Y = h * 0.40;
+  const MAX_Y = h * 0.78;
 
-  const candidates = layout.map(pos => {
-    const rx = pos[0];
+  const zoneWidth = w / 5;
+  const selected = [];
+
+  // 指定ゾーン内のランダム座標を生成
+  function randomPositionInZone(zoneIndex) {
+    const zoneLeft = zoneIndex * zoneWidth;
+    const zoneRight = (zoneIndex + 1) * zoneWidth;
+
+    const x = safePinX(
+      zoneLeft + Math.random() * zoneWidth,
+      w
+    );
+
+    const y =
+      MIN_Y + Math.random() * (MAX_Y - MIN_Y);
 
     return {
-      x: safePinX(rx, w),
-      y: h * (1 / 3 + pos[1] * (2 / 3)),
-      rx,
-      ry: (1 / 3 + pos[1] * (2 / 3))
+      x,
+      y,
+      rx: x / w,
+      ry: y / h
     };
-  });
-
-  // 候補をシャッフル
-  for (let i = candidates.length - 1; i > 0; i--) {
-    const j = randInt(0, i);
-    [candidates[i], candidates[j]] =
-      [candidates[j], candidates[i]];
   }
 
-  const selected = [];
-  const minPinCenterDistance =
-    PIN_RADIUS * 2 + CAT_RADIUS * 2 + 8;
+  // 既存ピンと必要な間隔を保っているか
+  function isValid(candidate) {
+    return selected.every(pin =>
+      Math.hypot(
+        candidate.x - pin.x,
+        candidate.y - pin.y
+      ) >= MIN_PIN_DISTANCE
+    );
+  }
 
-  for (const candidate of candidates) {
-    if (
-      selected.every(pin =>
-        Math.hypot(
-          candidate.x - pin.x,
-          candidate.y - pin.y
-        ) >= minPinCenterDistance
-      )
-    ) {
-      selected.push(candidate);
+  // 1ゾーンから1個配置を試みる
+  function tryPlaceInZone(zoneIndex, maxAttempts = 500) {
+    for (let i = 0; i < maxAttempts; i++) {
+      const candidate = randomPositionInZone(zoneIndex);
 
-      if (selected.length >= count) break;
+      if (isValid(candidate)) {
+        selected.push(candidate);
+        return true;
+      }
     }
+
+    return false;
   }
 
-  // 間隔条件を満たせない場合も、既存ピンが古い位置に残らないよう
-  // 未選択候補を追加して要求数を必ず確保する。
+  // ① 中央ゾーン（3番目）には必ず1個を優先して配置
+  if (!tryPlaceInZone(2, 1500)) {
+    console.warn(
+      "[ピン配置] 中央ゾーンで条件を満たす位置を確保できませんでした"
+    );
+    return [];
+  }
+
+  // ② 残りは5ゾーンからランダムに選んで配置
+  let attempts = 0;
+  const MAX_TOTAL_ATTEMPTS = 10000;
+
+  while (
+    selected.length < count &&
+    attempts < MAX_TOTAL_ATTEMPTS
+  ) {
+    attempts++;
+
+    const zone = randInt(0, 4);
+
+    tryPlaceInZone(zone, 50);
+  }
+
+  // 条件を守れなかった場合、無理に配置しない
   if (selected.length < count) {
-    for (const candidate of candidates) {
-      if (selected.includes(candidate)) continue;
-      selected.push(candidate);
-      if (selected.length >= count) break;
-    }
+    console.warn(
+      `[ピン配置] ${count}個の配置を完了できませんでした。` +
+      `条件を満たした${selected.length}個のみ採用します。`
+    );
   }
+
+  console.log("[ピン配置]", selected.map(pin => ({
+    x: Math.round(pin.x),
+    y: Math.round(pin.y),
+    zone: Math.min(
+      5,
+      Math.floor(pin.x / zoneWidth) + 1
+    )
+  })));
 
   return selected;
 }
@@ -928,7 +972,7 @@ function createBoard() {
     });
   }
 
-  const requestedCount = randInt(3, 5);
+  const requestedCount = championMode ? 2 : randInt(3, 4);
   const selected = generatePinPositions(requestedCount);
 
   pins = selected.map(pos => ({
@@ -939,55 +983,52 @@ function createBoard() {
     radius: PIN_RADIUS,
     multiplier: championMode ? 100 : 1
   }));
-
   if (!championMode) {
     assignNormalPinMultipliers();
   }
 
-  createSparkles();
-
-  if (championMode) {
-    createBoardSparkles();
-  } else {
-    boardSparkles = [];
-  }
-
-  lastPinChange = Date.now();
-  lastHoleChange = Date.now();
-
-  drawBoard();
 }
-
 // ------------------------------------------------------------
-// 30秒ごとにピン位置を変更
-// 倍率は維持する
+// 30秒ごとにピン位置・倍率・個数を再抽選
 // ------------------------------------------------------------
 
 function changePinPositions() {
   if (!pins.length) return;
 
-  const count = pins.length;
+  // ピンの個数を再抽選
+  const count = championMode ? 2 : randInt(3, 4);
+
+  // 新しい位置を生成
   const newPositions = generatePinPositions(count);
 
-  // 既存の倍率を保持して位置だけ変更
-  newPositions.forEach((pos, i) => {
-    if (!pins[i]) return;
+  // ピンを新しく作り直す
+  pins = newPositions.map(pos => ({
+    x: pos.x,
+    y: pos.y,
+    rx: pos.rx,
+    ry: pos.ry,
+    radius: PIN_RADIUS,
+    multiplier: championMode ? 100 : 1
+  }));
 
-    pins[i].x = pos.x;
-    pins[i].y = pos.y;
-    pins[i].rx = pos.rx;
-    pins[i].ry = pos.ry;
+  // 通常モードは倍率も再抽選
+  if (!championMode) {
+    assignNormalPinMultipliers();
+  }
 
-    // ピン接触状態をリセットし、移動直後の衝突を正常化
-  });
-
+  // ピン接触状態をリセット
   cats.forEach(cat => {
     const touching = new Set();
 
     pins.forEach((pin, index) => {
       const dx = cat.x - pin.x;
       const dy = cat.y - pin.y;
-      const lowerRatio = Math.max(0, Math.min(1, dy / cat.radius));
+
+      const lowerRatio = Math.max(
+        0,
+        Math.min(1, dy / cat.radius)
+      );
+
       const collisionRadius =
         cat.radius *
         (1 - (1 - CAT_LOWER_COLLISION_SCALE) * lowerRatio);
@@ -1000,7 +1041,9 @@ function changePinPositions() {
     cat.pinTouching = touching;
   });
 
+  // 次回更新時間をリセット
   lastPinChange = Date.now();
+
   drawBoard();
 }
 
@@ -1533,6 +1576,9 @@ function gameLoop(now) {
 
   if (!gameStarted || paused) return;
 
+  // ゲームループの生存時刻を記録
+  lastLoopHeartbeat = now;
+
   // 背景に戻った際の巨大dtによる処理暴走を防ぐ
   const rawDt = Math.max(0, now - (gameLoop.lastTime || now));
   const dt = Math.min(rawDt, 50);
@@ -1589,7 +1635,18 @@ function showClearButton() {
   };
 
   button.onclick = () => {
+    console.info("[くじ診断] もくひょうたっせいボタンがクリックされました", {
+      stage: stage,
+      stageCleared: stageCleared,
+      drawPending: drawPending,
+      money: money,
+      goal: goal
+    });
+
     removeClearButton();
+
+    console.info("[くじ診断] クリアボタンを削除しました");
+
     openLotteryBefore();
   };
 
@@ -1621,6 +1678,8 @@ function removeClearButton() {
 // ------------------------------------------------------------
 
 function openLotteryBefore() {
+  console.info("[くじ診断] くじ画面を開きます");
+
   openPopup(
     "ステージクリア！",
     `
@@ -1641,28 +1700,76 @@ function openLotteryBefore() {
     `
   );
 
-  document.getElementById("lottery-draw").onclick = drawCollection;
-}
+  const drawButton = document.getElementById("lottery-draw");
 
+  console.info("[くじ診断] ボタン生成結果:", drawButton);
+
+  if (!drawButton) {
+    console.error("[くじ診断] くじボタンが生成されていません");
+    return;
+  }
+
+  console.info("[くじ診断] ボタン状態:", {
+    disabled: drawButton.disabled,
+    drawPending: drawPending,
+    stage: stage,
+    money: money,
+    goal: goal
+  });
+
+  drawButton.onclick = () => {
+    console.info("[くじ診断] くじボタンがクリックされました");
+
+    console.info("[くじ診断] クリック時の状態:", {
+      disabled: drawButton.disabled,
+      drawPending: drawPending,
+      stage: stage,
+      money: money,
+      goal: goal
+    });
+
+    drawCollection();
+  };
+}
 // ------------------------------------------------------------
 // コレクション抽選・獲得演出
 // ------------------------------------------------------------
 
 
 function drawCollection() {
-  if (drawPending) return;
+  console.info("[くじ診断] drawCollection開始", {
+    drawPending: drawPending,
+    stage: stage,
+    money: money,
+    goal: goal
+  });
+
+  if (drawPending) {
+    console.warn("[くじ診断] 処理中のため抽選を中断しました");
+    return;
+  }
 
   // クリア目標分のポイントが足りない場合は抽選しない
   if (Number.isFinite(goal) && money < goal) {
+    console.error("[くじ診断] ポイント不足で抽選を中断しました", {
+      money: money,
+      goal: goal
+    });
     return;
   }
 
   drawPending = true;
 
+  console.info("[くじ診断] drawPendingをtrueにしました");
+
   // クリア目標分のポイントを消費
   if (Number.isFinite(goal)) {
+    console.info("[くじ診断] ポイント消費前:", money);
+
     money -= goal;
     updateMoney();
+
+    console.info("[くじ診断] ポイント消費後:", money);
   }
 
   const normalFaces = collectibleFaces.filter(
@@ -1675,32 +1782,77 @@ function drawCollection() {
 
   let prize;
 
+  console.info("[くじ診断] 景品抽選開始", {
+    availableCount: available.length,
+    collectionCount: collection.length,
+    secretCollected: collection.includes("secret")
+  });
+
   if (
     available.length === 0 &&
     !collection.includes("secret")
   ) {
     prize = collectibleFaces.find(c => c.id === "secret");
+
+    console.info("[くじ診断] シークレット景品を選択");
   } else if (available.length > 0) {
     prize = available[randInt(0, available.length - 1)];
+
+    console.info("[くじ診断] 通常景品を選択", prize);
   } else {
+    console.warn("[くじ診断] 景品が存在しないため終了処理へ");
+
     drawPending = false;
     finishStage();
     return;
   }
+
   const drawButton = document.getElementById("lottery-draw");
-  if (drawButton) drawButton.disabled = true;
+
+  console.info("[くじ診断] 抽選ボタン無効化処理", {
+    buttonExists: !!drawButton
+  });
+
+  if (drawButton) {
+    drawButton.disabled = true;
+    console.info("[くじ診断] ボタンを無効化しました");
+  } else {
+    console.error("[くじ診断] 抽選ボタンが見つかりません");
+  }
 
   const lotteryCard = drawButton?.closest(".lottery-card");
-  lotteryCard?.classList.add("lottery-shaking");
+
+  if (lotteryCard) {
+    lotteryCard.classList.add("lottery-shaking");
+    console.info("[くじ診断] 揺れ演出を開始しました");
+  } else {
+    console.warn("[くじ診断] lottery-cardが見つかりません");
+  }
 
   // ドラムロール再生
   const drumRoll = new Audio("audio/drum.mp3");
   drumRoll.volume = 1.0;
-  drumRoll.play().catch(() => {});
+
+  drumRoll.play()
+    .then(() => {
+      console.info("[くじ診断] ドラムロール再生成功");
+    })
+    .catch(error => {
+      console.warn("[くじ診断] ドラムロール再生失敗", error);
+    });
+  console.info("[くじ診断] 景品表示タイマーを開始します");
 
   setTimeout(() => {
+    console.info("[くじ診断] 1750ms経過、景品表示処理開始");
+
     collection.push(prize.id);
     newCollection.push(prize.id);
+
+    console.info("[くじ診断] コレクション更新完了", {
+      prizeId: prize.id,
+      collection: collection,
+      newCollection: newCollection
+    });
 
     collectionNotice.classList.remove("hidden");
 
@@ -1737,10 +1889,29 @@ function drawCollection() {
       `
     );
 
-    document.getElementById("reveal-continue").onclick = () => {
+    const continueButton = document.getElementById("reveal-continue");
+
+    console.info("[くじ診断] つぎへボタン生成:", continueButton);
+
+    if (!continueButton) {
+      console.error("[くじ診断] つぎへボタンが見つかりません");
+      return;
+    }
+
+    continueButton.onclick = () => {
+      console.info("[くじ診断] つぎへボタンがクリックされました");
+
       drawPending = false;
+
+      console.info("[くじ診断] drawPendingをfalseにしました");
+
       closePopup();
+
+      console.info("[くじ診断] ポップアップを閉じました");
+
       finishStage();
+
+      console.info("[くじ診断] finishStage完了");
     };
   }, 1750);
 }
@@ -1809,39 +1980,66 @@ function resumeLoop() {
 
 // ------------------------------------------------------------
 // フリーズ解除
+// 正常時は何も変更しない
+// 異常時はゲームループだけ再起動
 // ------------------------------------------------------------
 
 function recoverGame() {
-  console.warn("[キヨ猫あつめ] ゲーム復旧を実行します。");
-
-  stopGameTicker();
-  cats = [];
-
-  removeClearButton();
-
-  drawPending = false;
-  paused = false;
-
-  const now = performance.now();
-  gameLoop.lastTime = now;
-  lastDropTime = now;
-  lastHoleChange = Date.now();
-  lastPinChange = Date.now();
-
-  createBoard();
-
-  if (stageCleared && stage <= 5) {
-    showClearButton();
+  if (!gameStarted) {
+    console.info(
+      "[キヨ猫あつめ] 復旧不要：ゲームが開始されていません。"
+    );
+    return;
   }
 
-  closePopup();
+  if (paused) {
+    console.info(
+      "[キヨ猫あつめ] 復旧不要：現在は一時停止中です。"
+    );
+    return;
+  }
+
+  const now = performance.now();
+  const heartbeatAge = now - lastLoopHeartbeat;
+
+  const loopStopped =
+    animationId === null ||
+    heartbeatAge > 1500;
+
+  if (!loopStopped) {
+    console.info(
+      "[キヨ猫あつめ] 復旧不要：ゲームは正常に動作しています。",
+      {
+        animationId,
+        heartbeatAge: Math.round(heartbeatAge)
+      }
+    );
+    return;
+  }
+
+  console.warn(
+    "[キヨ猫あつめ] ゲームループ異常を検知。ループのみ復旧します。",
+    {
+      animationId,
+      heartbeatAge: Math.round(heartbeatAge)
+    }
+  );
+
+  // ループのみ再起動する
+  stopGameTicker();
+
+  gameLoop.lastTime = now;
+  lastLoopHeartbeat = now;
+  lastDropTime = now;
+
+  paused = false;
+
   startGameTicker();
 
   console.info(
-    "[キヨ猫あつめ] 復旧完了。ポイント・強化・コレクション・ステージは維持されています。"
+    "[キヨ猫あつめ] 復旧完了。盤面・猫・ピン倍率・ポイント・ステージ・コレクションは変更していません。"
   );
 }
-
 // ------------------------------------------------------------
 // ポップアップ
 // ------------------------------------------------------------
@@ -1934,7 +2132,7 @@ document.querySelectorAll(".menu-button").forEach(button => {
 });
 
 // ------------------------------------------------------------
-// 強化
+// 強化コスト
 // ------------------------------------------------------------
 
 function speedCost() {
@@ -1966,11 +2164,11 @@ function multiplierCost() {
   for (let level = 16; level <= multiplierLevel; level++) {
     let growthRate;
 
-    if (level <= 20) growthRate = 1.30;
-    else if (level <= 25) growthRate = 1.10;
-    else if (level <= 35) growthRate = 1.10;
-    else if (level <= 45) growthRate = 1.10;
-    else if (level <= 55) growthRate = 1.10;
+    if (level <= 20) growthRate = 1.20;
+    else if (level <= 25) growthRate = 1.15;
+    else if (level <= 35) growthRate = 1.30;
+    else if (level <= 45) growthRate = 1.30;
+    else if (level <= 55) growthRate = 1.20;
     else if (level <= 65) growthRate = 1.20;
     else if (level <= 75) growthRate = 1.20;
     else if (level <= 85) growthRate = 1.20;
@@ -1986,14 +2184,26 @@ function multiplierCost() {
 // 基本獲得金額
 // ------------------------------------------------------------
 
-function calculateMultiplier(level) {
-  if (level <= 10) return 1 + level * 2;
-  if (level <= 20) return 21 + (level - 10) * 3;
-  if (level <= 29) return 51 + (level - 20) * 5;
-  if (level === 30) return 96;
-  return 100 + (level - 30) * 10;
-}
+// ------------------------------------------------------------
+// 基本獲得金額
+// ------------------------------------------------------------
 
+function calculateMultiplier(level) {
+  // Lv1～10：1円から3円ずつ増加
+  if (level <= 9) return 1 + level * 3;
+
+  // Lv11～20：5円ずつ増加
+  if (level <= 19) return 28 + (level - 9) * 5;
+
+  // Lv21～29：10円ずつ増加
+  if (level <= 28) return 78 + (level - 19) * 10;
+
+  // Lv30：200円
+  if (level === 29) return 200;
+
+  // Lv31以降：100円ずつ増加
+  return 200 + (level - 29) * 100;
+}
 // ------------------------------------------------------------
 // 強化処理
 // ------------------------------------------------------------
@@ -2441,35 +2651,13 @@ document.getElementById("open-rules").addEventListener("click", event => {
   document.getElementById("champ-toggle").onchange = e => {
     championMode = e.target.checked;
 
-    holes.forEach(hole => {
-      hole.multiplier = championMode
-        ? 9999
-        : randomHoleMultiplier();
-    });
-
-    if (championMode) {
-      pins.forEach(pin => {
-        pin.multiplier = 100;
-      });
-    } else {
-      assignNormalPinMultipliers();
-    }
-
-    lastHoleChange = Date.now();
-    lastPinChange = Date.now();
-
-    createSparkles();
-
-    if (championMode) {
-      createBoardSparkles();
-    } else {
-      boardSparkles = [];
-    }
+    // 盤面を作り直す
+    createBoard();
 
     updateBGM();
-    drawBoard();
   };
-}
+  }
+
 // ------------------------------------------------------------
 // さいしょから
 // ------------------------------------------------------------
