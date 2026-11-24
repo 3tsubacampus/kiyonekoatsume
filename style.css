@@ -226,7 +226,7 @@ button:disabled {
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
-  padding-bottom: 84px;
+  padding-bottom: 68px;
 }
 
 #game-header {
