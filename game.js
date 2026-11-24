@@ -548,7 +548,7 @@ function boardH() {
 }
 
 function randomHoleMultiplier() {
-  return randInt(1, 10);
+  return randInt(2, 10);
 }
 
 function safePinX(x, w) {
