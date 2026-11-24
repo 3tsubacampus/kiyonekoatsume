@@ -27,9 +27,7 @@ const collectionImageOverlay =
 
 const collectionLargeImage =
   document.getElementById("collection-large-image");
-
 const collectionImageClose =
-  document.getElementElementById?.("collection-image-close") ||
   document.getElementById("collection-image-close");
 // ------------------------------------------------------------
 // 周回数
@@ -95,6 +93,7 @@ let seOn = true;
 
 const MAX_SPEED_LEVEL = 12;
 const MIN_DROP_INTERVAL = 1.5;
+const MAX_CATS = 10;
 
 const PIN_RADIUS = 27;
 const HOLE_HEIGHT = 42;
@@ -427,6 +426,7 @@ function calculateIdleIncomeRate() {
 
 const pointHistory = [];
 const MAX_POINT_HISTORY = 200;
+const DEBUG_POINT_LOGS = false;
 
 function recordPointGain(type, slotMultiplier, amount, cat) {
   const entry = {
@@ -449,12 +449,18 @@ function recordPointGain(type, slotMultiplier, amount, cat) {
     );
   }
 
-  console.log(
-    `[ポイント獲得] ${entry.time} | STAGE ${entry.stage} | ` +
-    `${entry.type} ${entry.multiplier} | ${entry.amount} | ` +
-    `合計 ${entry.total}`
-  );
+  if (DEBUG_POINT_LOGS) {
+    console.log(
+      `[ポイント獲得] ${entry.time} | STAGE ${entry.stage} | ` +
+      `${entry.type} ${entry.multiplier} | ${entry.amount} | ` +
+      `合計 ${entry.total}`
+    );
+  }
 }
+
+// ------------------------------------------------------------
+// ポイント履歴の表示
+// ------------------------------------------------------------
 
 function printPointHistory() {
   console.group("🐈 キヨ猫あつめ：ポイント取得履歴");
@@ -721,7 +727,7 @@ function resizeCanvas() {
   }
 
   pins.forEach(pin => {
-    pin.x = safePinX(pin.rx, rect.width);
+    pin.x = safePinX(pin.rx * rect.width, rect.width);
     pin.y = pin.ry * rect.height;
   });
 
@@ -1053,6 +1059,9 @@ function changePinPositions() {
 // ------------------------------------------------------------
 
 function dropCat() {
+  // 盤面に登場できる落下猫は最大10匹
+  if (cats.length >= MAX_CATS) return false;
+
   const w = boardW();
   const third = w / 3;
 
@@ -1074,8 +1083,11 @@ function dropCat() {
     vy: 0,
     rotation: Math.random() * Math.PI * 2,
     spin: (Math.random() - 0.5) * 0.012,
-    pinTouching: new Set()
+    pinTouching: new Set(),
+    frameContacts: new Set()
   });
+
+  return true;
 }
 
 // ------------------------------------------------------------
@@ -1165,7 +1177,7 @@ recordIdleIncome(gained);
 // 衝突判定の細かすぎる分割を抑え、負荷を軽減
 // ------------------------------------------------------------
 
-function updateCats(dt) {
+function updateCats(dt, now) {
   const w = boardW();
   const h = boardH();
   const moneyBeforeUpdate = money;
@@ -1179,14 +1191,15 @@ function updateCats(dt) {
 
     cat.vy = Math.min(terminal, cat.vy + gravity * scale);
 
-    cat.vx +=
-      Math.sin(performance.now() / 950 + cat.rotation) *
-      0.008 * scale;
+cat.vx +=
+  Math.sin(now / 950 + cat.rotation) *
+  0.008 * scale;
 
     cat.vx = Math.max(-1.15, Math.min(1.15, cat.vx));
     cat.rotation += cat.spin * scale;
 
-    const frameContacts = new Set();
+const frameContacts = cat.frameContacts;
+frameContacts.clear();
 
     const travel = Math.max(
       Math.abs(cat.vx * scale),
@@ -1248,7 +1261,11 @@ function updateCats(dt) {
       }
     }
 
-    cat.pinTouching = frameContacts;
+// 前フレームと今フレームの接触判定Setを交換して再利用する。
+const previousContacts = cat.pinTouching;
+cat.pinTouching = frameContacts;
+cat.frameContacts = previousContacts;
+cat.frameContacts.clear();
 
 
     // 穴に入った猫を処理
@@ -1393,19 +1410,18 @@ function darkenHexColor(hex, amount = 0.12) {
 }
 
 function drawBoard() {
+  
   const w = boardW();
   const h = boardH();
 
   if (!w || !h) return;
 
-  // CSS境界・高DPI端数を含め、Canvasの裏面全体を毎フレーム消去する。
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.restore();
-
-  ctx.fillStyle = getComputedStyle(canvas).backgroundColor;
-  ctx.fillRect(0, 0, w, h);
+// Canvas全体をクリアする。
+// 背景色はCSS側で設定済みなので、塗り直しは不要。
+ctx.save();
+ctx.setTransform(1, 0, 0, 1, 0, 0);
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+ctx.restore();
 
   // ピン
   pins.forEach(drawPin);
@@ -1585,10 +1601,13 @@ function gameLoop(now) {
 
   gameLoop.lastTime = now;
 
-  if (now - lastDropTime >= speed * 1000) {
+if (now - lastDropTime >= speed * 1000) {
+  if (cats.length < MAX_CATS) {
     dropCat();
-    lastDropTime = now;
   }
+
+  lastDropTime = now;
+}
 
   // 穴倍率は60秒ごと
   if (
@@ -1603,7 +1622,7 @@ function gameLoop(now) {
     changePinPositions();
   }
 
-  updateCats(dt);
+  updateCats(dt,now);
   updateBoardSparkles(dt);
   drawBoard();
 
